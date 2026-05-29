@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prompt Manager</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Update notification (hidden by default) -->
+  <div id="update-banner" class="update-banner" style="display: none;">
+    <span>🆕</span>
+    <span id="update-text"></span>
+    <a id="update-link" href="#" target="_blank">下载更新</a>
+  </div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-top">
+      <h1>⚡ Prompt Manager</h1>
+      <button id="settings-btn" class="icon-btn" title="设置">⚙️</button>
+    </div>
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search-input" placeholder="搜索提示词...">
+    </div>
+  </header>
+
+  <!-- Category tabs -->
+  <div class="category-tabs" id="category-tabs">
+    <button class="tab active" data-category="all">全部</button>
+  </div>
+
+  <!-- Prompt list -->
+  <div class="prompt-list" id="prompt-list">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">📭</div>
+      <p>还没有提示词</p>
+      <p class="empty-hint">点击下方按钮添加第一个提示词</p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <button id="add-btn" class="btn btn-primary">+ 新建提示词</button>
+    <button id="import-btn" class="btn btn-secondary">📥 导入</button>
+    <button id="export-btn" class="btn btn-secondary">📤 导出</button>
+  </footer>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast"></div>
+
+  <script src="storage.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

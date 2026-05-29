@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prompt Manager - 设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <h1>⚡ Prompt Manager</h1>
+      <span class="header-subtitle">- 提示词管理</span>
+    </div>
+    <div class="header-right">
+      <button id="lang-btn" class="lang-btn">🇨🇳 中文</button>
+      <button id="api-settings-btn" class="btn btn-header">⚙️ API 配置</button>
+      <button id="import-btn" class="btn btn-header">📥 导入</button>
+      <button id="export-btn" class="btn btn-header">📤 导出全部</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- Sidebar: Category Management -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>分类管理</h2>
+        <button id="add-category-btn" class="btn btn-small btn-primary">+ 添加</button>
+      </div>
+      <div class="category-list" id="category-list">
+        <div class="category-item active" data-category="all">
+          <span class="category-emoji">📋</span>
+          <span class="category-name">全部</span>
+          <span class="category-count" id="all-count">0</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Content: Prompt List -->
+    <main class="content">
+      <div class="content-header">
+        <div class="content-actions">
+          <input type="text" id="search-input" class="search-input" placeholder="搜索提示词...">
+          <select id="sort-select" class="sort-select">
+            <option value="updatedAt">按更新时间排序</option>
+            <option value="createdAt">按创建时间排序</option>
+            <option value="title">按名称排序</option>
+          </select>
+        </div>
+        <div class="content-buttons">
+          <button id="select-all-btn" class="btn btn-secondary" style="display: none;">☑️ 全选</button>
+          <button id="delete-selected-btn" class="btn btn-danger" style="display: none;">🗑️ 删除选中</button>
+          <button id="add-prompt-btn" class="btn btn-primary">+ 新建提示词</button>
+        </div>
+      </div>
+
+      <div class="prompt-list" id="prompt-list">
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal: Add/Edit Prompt -->
+  <div id="prompt-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-title">新建提示词</h2>
+        <button class="modal-close" id="modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>标题</label>
+          <input type="text" id="prompt-title" placeholder="输入提示词标题">
+        </div>
+        <div class="form-group">
+          <label>内容</label>
+          <textarea id="prompt-content" rows="6" placeholder="输入提示词内容"></textarea>
+        </div>
+        <div class="form-group">
+          <label>分类</label>
+          <select id="prompt-category">
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-cancel">取消</button>
+        <button class="btn btn-primary" id="modal-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add/Edit Category -->
+  <div id="category-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="category-modal-title">新建分类</h2>
+        <button class="modal-close" id="category-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>分类名称</label>
+          <input type="text" id="category-name" placeholder="输入分类名称">
+        </div>
+        <div class="form-group">
+          <label>英文名称</label>
+          <input type="text" id="category-name-en" placeholder="Enter category name">
+        </div>
+        <div class="form-group">
+          <label>表情符号</label>
+          <div class="emoji-picker" id="emoji-picker">
+            <div class="emoji-selected" id="emoji-selected">📝</div>
+            <button class="btn btn-small btn-secondary" id="emoji-change-btn">更换</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="category-modal-cancel">取消</button>
+        <button class="btn btn-primary" id="category-modal-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Emoji Picker -->
+  <div id="emoji-modal" class="modal" style="display: none;">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2>选择表情符号</h2>
+        <button class="modal-close" id="emoji-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="emoji-search" class="search-input" placeholder="搜索表情...">
+        <div class="emoji-grid" id="emoji-grid">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: AI Polish -->
+  <div id="ai-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>✨ AI 润色提示词</h2>
+        <button class="modal-close" id="ai-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>原始提示词</label>
+          <div class="ai-original" id="ai-original"></div>
+        </div>
+        <div class="form-group">
+          <label>优化方向（可多选）</label>
+          <div class="ai-options">
+            <label class="ai-option-card">
+              <input type="checkbox" id="ai-role" checked>
+              <div class="ai-option-info">
+                <span class="ai-option-title">添加角色设定</span>
+                <span class="ai-option-example">例："帮我写一篇文案" → "你是一位资深小红书博主，请帮我写一篇种草文案"</span>
+              </div>
+            </label>
+            <label class="ai-option-card">
+              <input type="checkbox" id="ai-output" checked>
+              <div class="ai-option-info">
+                <span class="ai-option-title">细化输出要求</span>
+                <span class="ai-option-example">例：添加"字数500字以内，分3个段落，使用口语化表达"</span>
+              </div>
+            </label>
+            <label class="ai-option-card">
+              <input type="checkbox" id="ai-example">
+              <div class="ai-option-info">
+                <span class="ai-option-title">添加示例参考</span>
+                <span class="ai-option-example">例：附上1-2个期望输出的样例，让AI更准确理解你的需求</span>
+              </div>
+            </label>
+            <label class="ai-option-card">
+              <input type="checkbox" id="ai-constraint">
+              <div class="ai-option-info">
+                <span class="ai-option-title">增加约束条件</span>
+                <span class="ai-option-example">例："不要使用专业术语"、"必须包含数据支撑"、"语气轻松活泼"</span>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div class="form-group" id="ai-result-group" style="display: none;">
+          <label>AI 优化结果</label>
+          <div class="ai-result" id="ai-result"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="ai-modal-cancel">取消</button>
+        <button class="btn btn-secondary" id="ai-regenerate" style="display: none;">重新生成</button>
+        <button class="btn btn-primary" id="ai-generate">开始润色</button>
+        <button class="btn btn-primary" id="ai-use" style="display: none;">使用优化结果</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: API Config -->
+  <div id="api-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>⚙️ API 配置管理</h2>
+        <button class="modal-close" id="api-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>当前使用的配置</label>
+          <div class="api-configs" id="api-configs">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>配置名称</label>
+          <input type="text" id="api-name" placeholder="OpenAI GPT-4">
+        </div>
+        <div class="form-group">
+          <label>API 地址</label>
+          <input type="text" id="api-url" placeholder="https://api.openai.com/v1">
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <div class="api-key-input">
+            <input type="password" id="api-key" placeholder="sk-...">
+            <button class="btn btn-small btn-secondary" id="api-key-toggle">👁️</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>模型名称</label>
+          <input type="text" id="api-model" placeholder="gpt-4">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="api-delete">删除此配置</button>
+        <button class="btn btn-secondary" id="api-test">测试连接</button>
+        <button class="btn btn-primary" id="api-save">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast"></div>
+
+  <script src="storage.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
