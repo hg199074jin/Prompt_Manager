@@ -95,6 +95,35 @@ function setupEventListeners() {
   document.getElementById('api-delete').addEventListener('click', deleteApiConfigById);
   document.getElementById('api-test').addEventListener('click', testApiConnection);
   document.getElementById('api-key-toggle').addEventListener('click', toggleApiKeyVisibility);
+
+  // Sidebar resizer
+  const resizer = document.getElementById('sidebar-resizer');
+  const sidebar = document.querySelector('.sidebar');
+  let isResizing = false;
+
+  resizer.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    resizer.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const newWidth = e.clientX - sidebar.getBoundingClientRect().left;
+    if (newWidth >= 220 && newWidth <= 500) {
+      sidebar.style.width = newWidth + 'px';
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      resizer.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
 }
 
 // ========== Category Management ==========

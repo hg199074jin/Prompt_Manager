@@ -100,6 +100,7 @@ async function addCategory(category) {
   const categories = await getCategories();
   category.id = 'cat_' + Date.now();
   category.isPreset = false;
+  category.sortOrder = categories.length;
   categories.push(category);
   await chrome.storage.local.set({ [STORAGE_KEYS.CATEGORIES]: categories });
   return category;
@@ -138,6 +139,14 @@ async function deleteCategory(id) {
 
 async function swapCategoryOrder(id1, id2) {
   const categories = await getCategories();
+
+  // Ensure all categories have sortOrder before swapping
+  categories.forEach((cat, idx) => {
+    if (cat.sortOrder === undefined || cat.sortOrder === null) {
+      cat.sortOrder = idx;
+    }
+  });
+
   const cat1 = categories.find(c => c.id === id1);
   const cat2 = categories.find(c => c.id === id2);
   if (cat1 && cat2) {
