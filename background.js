@@ -485,12 +485,20 @@ let dynamicInsertPromptMenuIds = new Set();
 
 function createContextMenu(options) {
   return new Promise(resolve => {
+    if (!chrome.contextMenus?.create) {
+      resolve(new Error('chrome.contextMenus.create is unavailable'));
+      return;
+    }
     chrome.contextMenus.create(options, () => resolve(chrome.runtime.lastError || null));
   });
 }
 
 function removeContextMenu(id) {
   return new Promise(resolve => {
+    if (!chrome.contextMenus?.remove) {
+      resolve(new Error('chrome.contextMenus.remove is unavailable'));
+      return;
+    }
     chrome.contextMenus.remove(id, () => resolve(chrome.runtime.lastError || null));
   });
 }
@@ -501,6 +509,7 @@ function truncateMenuTitle(title) {
 }
 
 async function createBaseContextMenus() {
+  if (!chrome.contextMenus?.removeAll) return;
   await new Promise(resolve => chrome.contextMenus.removeAll(resolve));
   await createContextMenu({
     id: 'save-selection',
@@ -568,6 +577,7 @@ async function createDynamicInsertPromptMenus() {
 }
 
 async function refreshContextMenus() {
+  if (!chrome.contextMenus?.create) return;
   await createBaseContextMenus();
   await createDynamicInsertPromptMenus();
 }
@@ -780,39 +790,47 @@ async function recordPromptUsageFromBackground(promptId, meta = {}) {
   return { success: true };
 }
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === 'save-selection') {
-    // Save selected text as a new prompt via options page
-    const selectedText = info.selectionText || '';
-    await chrome.storage.local.set({ _pendingSaveText: selectedText });
-    chrome.runtime.openOptionsPage();
-  }
-  if (getPromptIdFromMenuItem(info.menuItemId)) {
-    await insertPromptFromMenu(info, tab);
-  }
-});
+if (chrome.contextMenus?.onClicked?.addListener) {
+  chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId === 'save-selection') {
+      // Save selected text as a new prompt via options page
+      const selectedText = info.selectionText || '';
+      await chrome.storage.local.set({ _pendingSaveText: selectedText });
+      chrome.runtime.openOptionsPage();
+    }
+    if (getPromptIdFromMenuItem(info.menuItemId)) {
+      await insertPromptFromMenu(info, tab);
+    }
+  });
+} else {
+  console.warn('chrome.contextMenus.onClicked is unavailable; context menu actions are disabled.');
+}
 
 // ============================================================
 // Keyboard Shortcuts
 // ============================================================
 
-chrome.commands.onCommand.addListener(async (command) => {
-  if (command === 'save-selection') {
-    // Get selected text from active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab) return;
+if (chrome.commands?.onCommand?.addListener) {
+  chrome.commands.onCommand.addListener(async (command) => {
+    if (command === 'save-selection') {
+      // Get selected text from active tab
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab) return;
 
-    try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => window.getSelection().toString()
-      });
-      const selectedText = results[0]?.result || '';
-      await chrome.storage.local.set({ _pendingSaveText: selectedText });
-      chrome.runtime.openOptionsPage();
-    } catch (e) {
-      // Cannot inject into this page (chrome://, etc.)
-      chrome.runtime.openOptionsPage();
+      try {
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => window.getSelection().toString()
+        });
+        const selectedText = results[0]?.result || '';
+        await chrome.storage.local.set({ _pendingSaveText: selectedText });
+        chrome.runtime.openOptionsPage();
+      } catch (e) {
+        // Cannot inject into this page (chrome://, etc.)
+        chrome.runtime.openOptionsPage();
+      }
     }
-  }
-});
+  });
+} else {
+  console.warn('chrome.commands.onCommand is unavailable; keyboard shortcuts are disabled.');
+}
