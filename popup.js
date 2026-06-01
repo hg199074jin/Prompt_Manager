@@ -159,13 +159,13 @@ async function renderPrompts() {
     `;
 
     item.addEventListener('click', () => {
-      const variables = extractVariables(prompt.content);
+      const variables = parseEnhancedVariables(prompt.content);
       if (variables.length > 0) {
         showVariablesModal(prompt, variables);
       } else {
         copyToClipboard(prompt.content);
+        recordPromptUsage(prompt.id, { action: 'popup-copy', host: 'extension-popup', url: '' });
       }
-      incrementUsageCount(prompt.id);
     });
 
     item.addEventListener('dblclick', () => {
@@ -336,13 +336,6 @@ function escapeHtml(text) {
 // Template Variables
 // ============================================================
 
-function extractVariables(content) {
-  const matches = content.match(/\{\{([^}]+)\}\}/g);
-  if (!matches) return [];
-  const unique = [...new Set(matches)];
-  return unique.map(m => m.replace(/\{\{|\}\}/g, '').trim());
-}
-
 function showVariablesModal(prompt, variables) {
   currentVariablesPrompt = prompt;
   const form = document.getElementById('variables-form');
@@ -352,13 +345,25 @@ function showVariablesModal(prompt, variables) {
     const group = document.createElement('div');
     group.className = 'var-group';
     const label = document.createElement('label');
-    label.textContent = varName;
+    label.textContent = varName.label || varName.name;
     label.htmlFor = 'var-input-' + index;
-    const input = document.createElement('input');
-    input.type = 'text';
+    let input;
+    if (varName.options && varName.options.length > 0) {
+      input = document.createElement('select');
+      varName.options.forEach(option => {
+        const optionEl = document.createElement('option');
+        optionEl.value = option;
+        optionEl.textContent = option;
+        input.appendChild(optionEl);
+      });
+    } else {
+      input = document.createElement('input');
+      input.type = varName.type === 'number' ? 'number' : 'text';
+      input.value = varName.defaultValue || '';
+      input.placeholder = '请输入 ' + (varName.label || varName.name);
+    }
     input.id = 'var-input-' + index;
-    input.dataset.var = varName;
-    input.placeholder = '请输入 ' + varName;
+    input.dataset.var = varName.name;
     group.appendChild(label);
     group.appendChild(input);
     form.appendChild(group);
@@ -377,16 +382,20 @@ function closeVariablesModal() {
 function confirmVariables() {
   if (!currentVariablesPrompt) return;
 
-  let content = currentVariablesPrompt.content;
+  const values = {};
   const inputs = document.querySelectorAll('#variables-form input[data-var]');
+  const selects = document.querySelectorAll('#variables-form select[data-var]');
 
   inputs.forEach(input => {
-    const varName = input.dataset.var;
-    const value = input.value.trim();
-    content = content.replaceAll(`{{${varName}}}`, value || `{{${varName}}}`);
+    values[input.dataset.var] = input.value.trim();
+  });
+  selects.forEach(select => {
+    values[select.dataset.var] = select.value.trim();
   });
 
+  const content = fillEnhancedVariables(currentVariablesPrompt.content, values);
   copyToClipboard(content);
+  recordPromptUsage(currentVariablesPrompt.id, { action: 'popup-copy', host: 'extension-popup', url: '' });
   closeVariablesModal();
 }
 

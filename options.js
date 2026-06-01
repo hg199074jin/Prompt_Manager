@@ -9,6 +9,7 @@ let currentAiPromptId = null;
 let aiResult = '';
 let currentApiConfigId = null;
 let currentTags = [];
+let currentVersionPromptId = null;
 
 // Common emojis for picker
 const COMMON_EMOJIS = [
@@ -93,6 +94,13 @@ function setupEventListeners() {
 
   // Language button
   document.getElementById('lang-btn').addEventListener('click', toggleLanguage);
+
+  // Analytics button
+  document.getElementById('analytics-btn').addEventListener('click', openAnalyticsModal);
+  document.getElementById('analytics-modal-close').addEventListener('click', closeAnalyticsModal);
+
+  // Version history modal
+  document.getElementById('version-modal-close').addEventListener('click', closeVersionModal);
 
   // API settings button
   document.getElementById('api-settings-btn').addEventListener('click', () => openApiModal());
@@ -367,7 +375,10 @@ async function renderPrompts() {
     if (sortBy === 'title') {
       return a.title.localeCompare(b.title);
     }
-    return b[sortBy] - a[sortBy];
+    if (sortBy === 'usageCount' || sortBy === 'rating') {
+      return (b[sortBy] || 0) - (a[sortBy] || 0);
+    }
+    return (b[sortBy] || 0) - (a[sortBy] || 0);
   });
 
   listContainer.innerHTML = '';
@@ -377,6 +388,9 @@ async function renderPrompts() {
     const card = document.createElement('div');
     card.className = 'prompt-card';
     const tags = (prompt.tags || []).map(t => `<span class="prompt-card-tag">${escapeHtml(t)}</span>`).join('');
+    const rating = Number(prompt.rating) || 0;
+    const ratingText = rating > 0 ? '★'.repeat(rating) : '未评分';
+    const lastUsedText = prompt.lastUsedAt ? new Date(prompt.lastUsedAt).toLocaleString() : '从未使用';
     card.innerHTML = `
       <div class="prompt-card-header">
         <div>
@@ -389,10 +403,17 @@ async function renderPrompts() {
         </div>
       </div>
       ${tags ? `<div class="prompt-card-tags">${tags}</div>` : ''}
+      <div class="prompt-card-metrics">
+        <span>${escapeHtml(prompt.slashCommand || '未设置快捷指令')}</span>
+        <span>使用 ${prompt.usageCount || 0} 次</span>
+        <span>${ratingText}</span>
+        <span>最近：${escapeHtml(lastUsedText)}</span>
+      </div>
       <div class="prompt-card-content">${escapeHtml(prompt.content)}</div>
       <div class="prompt-card-actions">
         <button class="btn btn-small btn-primary copy-btn">📋 复制</button>
         <button class="btn btn-small btn-secondary edit-btn">✏️ 编辑</button>
+        <button class="btn btn-small btn-secondary version-btn">🕘 历史</button>
         <button class="btn btn-small btn-secondary ai-btn">✨ AI 润色</button>
         <button class="btn btn-small btn-danger delete-btn">🗑️ 删除</button>
       </div>
@@ -411,6 +432,11 @@ async function renderPrompts() {
     card.querySelector('.ai-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       openAiPolishModal(prompt.id);
+    });
+
+    card.querySelector('.version-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      openVersionModal(prompt.id);
     });
 
     card.querySelector('.delete-btn').addEventListener('click', (e) => {
@@ -446,6 +472,8 @@ function openPromptModal(promptId = null) {
   const titleInput = document.getElementById('prompt-title');
   const contentInput = document.getElementById('prompt-content');
   const categorySelect = document.getElementById('prompt-category');
+  const slashInput = document.getElementById('prompt-slash-command');
+  const ratingSelect = document.getElementById('prompt-rating');
 
   title.textContent = promptId ? '编辑提示词' : '新建提示词';
 
@@ -461,6 +489,8 @@ function openPromptModal(promptId = null) {
           titleInput.value = prompt.title;
           contentInput.value = prompt.content;
           categorySelect.value = prompt.categoryId;
+          slashInput.value = prompt.slashCommand || '';
+          ratingSelect.value = String(Number(prompt.rating) || 0);
           currentTags = [...(prompt.tags || [])];
           renderTagsInput();
         }
@@ -468,6 +498,8 @@ function openPromptModal(promptId = null) {
     } else {
       titleInput.value = '';
       contentInput.value = '';
+      slashInput.value = '';
+      ratingSelect.value = '0';
       if (currentCategory !== 'all' && currentCategory !== 'favorites') {
         categorySelect.value = currentCategory;
       }
@@ -524,6 +556,8 @@ async function savePrompt() {
   const content = document.getElementById('prompt-content').value.trim();
   const categoryId = document.getElementById('prompt-category').value;
   const tags = currentTags.filter(t => t.trim());
+  const slashCommand = normalizeSlashCommand(document.getElementById('prompt-slash-command').value);
+  const rating = Number(document.getElementById('prompt-rating').value) || 0;
 
   if (!title || !content) {
     showToast('请填写标题和内容');
@@ -531,10 +565,10 @@ async function savePrompt() {
   }
 
   if (currentPromptId) {
-    await updatePrompt(currentPromptId, { title, content, categoryId, tags });
+    await updatePrompt(currentPromptId, { title, content, categoryId, tags, slashCommand, rating });
     showToast('提示词已更新');
   } else {
-    await addPrompt({ title, content, categoryId, tags });
+    await addPrompt({ title, content, categoryId, tags, slashCommand, rating });
     showToast('提示词已添加');
   }
 
@@ -769,6 +803,94 @@ async function useAiResult() {
   await updatePrompt(currentAiPromptId, { content: aiResult });
   showToast('已使用优化结果');
   closeAiModal();
+  await renderPrompts();
+}
+
+// ========== Analytics ==========
+
+async function openAnalyticsModal() {
+  const prompts = await getPrompts();
+  const usageEvents = await getUsageEvents();
+  const summary = summarizeUsage(usageEvents);
+  const promptById = new Map(prompts.map(prompt => [prompt.id, prompt]));
+  const topPrompts = Object.entries(summary.byPrompt)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+  const topHosts = Object.entries(summary.byHost)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+
+  document.getElementById('analytics-summary').innerHTML = `
+    <div class="analytics-card"><strong>${summary.total}</strong><span>总使用次数</span></div>
+    <div class="analytics-card"><strong>${topPrompts.length}</strong><span>被使用的提示词</span></div>
+    <div class="analytics-card"><strong>${topHosts.length}</strong><span>使用网站</span></div>
+  `;
+
+  const rows = [];
+  rows.push('<h3>热门提示词</h3>');
+  if (topPrompts.length === 0) {
+    rows.push('<div class="analytics-row"><span>暂无使用记录</span><span></span></div>');
+  } else {
+    topPrompts.forEach(([promptId, count]) => {
+      const prompt = promptById.get(promptId);
+      rows.push(`<div class="analytics-row"><span>${escapeHtml(prompt?.title || '已删除提示词')}</span><strong>${count}</strong></div>`);
+    });
+  }
+  rows.push('<h3>常用网站</h3>');
+  topHosts.forEach(([host, count]) => {
+    rows.push(`<div class="analytics-row"><span>${escapeHtml(host)}</span><strong>${count}</strong></div>`);
+  });
+
+  document.getElementById('analytics-list').innerHTML = rows.join('');
+  document.getElementById('analytics-modal').style.display = 'flex';
+}
+
+function closeAnalyticsModal() {
+  document.getElementById('analytics-modal').style.display = 'none';
+}
+
+// ========== Version History ==========
+
+async function openVersionModal(promptId) {
+  currentVersionPromptId = promptId;
+  const versions = await getPromptVersions(promptId);
+  const list = document.getElementById('version-list');
+
+  if (versions.length === 0) {
+    list.innerHTML = '<div class="version-item">暂无历史版本。保存修改后会自动生成版本记录。</div>';
+  } else {
+    list.innerHTML = '';
+    versions.forEach(version => {
+      const item = document.createElement('div');
+      item.className = 'version-item';
+      item.innerHTML = `
+        <div class="version-item-header">
+          <strong>${new Date(version.createdAt).toLocaleString()}</strong>
+          <button class="btn btn-small btn-secondary restore-version-btn" data-id="${version.id}">恢复此版本</button>
+        </div>
+        <div><strong>${escapeHtml(version.snapshot.title || '')}</strong></div>
+        <pre>${escapeHtml(version.snapshot.content || '')}</pre>
+      `;
+      item.querySelector('.restore-version-btn').addEventListener('click', () => restoreVersion(version.id));
+      list.appendChild(item);
+    });
+  }
+
+  document.getElementById('version-modal').style.display = 'flex';
+}
+
+function closeVersionModal() {
+  document.getElementById('version-modal').style.display = 'none';
+  currentVersionPromptId = null;
+}
+
+async function restoreVersion(versionId) {
+  if (!currentVersionPromptId) return;
+  if (!confirm('确定要恢复到这个历史版本吗？当前版本会先保存到历史记录。')) return;
+  await restorePromptVersion(currentVersionPromptId, versionId);
+  showToast('已恢复历史版本');
+  closeVersionModal();
+  await renderCategories();
   await renderPrompts();
 }
 

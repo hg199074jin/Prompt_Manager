@@ -350,7 +350,8 @@ body {
   font-weight: 500;
 }
 
-.var-group input {
+.var-group input,
+.var-group select {
   width: 100%;
   padding: 6px 10px;
   border: 1px solid #ddd;

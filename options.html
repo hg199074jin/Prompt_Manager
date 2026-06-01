@@ -15,6 +15,7 @@
     </div>
     <div class="header-right">
       <button id="lang-btn" class="lang-btn">🇨🇳 中文</button>
+      <button id="analytics-btn" class="btn btn-header">📊 使用分析</button>
       <button id="api-settings-btn" class="btn btn-header">⚙️ API 配置</button>
       <button id="sync-settings-btn" class="btn btn-header">☁️ 同步设置</button>
       <span id="sync-status-indicator" class="sync-status-indicator not-configured" title="同步状态"></span>
@@ -48,6 +49,8 @@
           <select id="sort-select" class="sort-select">
             <option value="updatedAt">按更新时间排序</option>
             <option value="createdAt">按创建时间排序</option>
+            <option value="usageCount">按使用次数排序</option>
+            <option value="rating">按评分排序</option>
             <option value="title">按名称排序</option>
           </select>
         </div>
@@ -82,6 +85,21 @@
         <div class="form-group">
           <label>分类</label>
           <select id="prompt-category">
+          </select>
+        </div>
+        <div class="form-group">
+          <label>快捷指令</label>
+          <input type="text" id="prompt-slash-command" placeholder="/review">
+        </div>
+        <div class="form-group">
+          <label>评分</label>
+          <select id="prompt-rating">
+            <option value="0">未评分</option>
+            <option value="1">★</option>
+            <option value="2">★★</option>
+            <option value="3">★★★</option>
+            <option value="4">★★★★</option>
+            <option value="5">★★★★★</option>
           </select>
         </div>
         <div class="form-group">
@@ -249,6 +267,33 @@
   <!-- Toast notification -->
   <div id="toast" class="toast"></div>
 
+  <!-- Modal: Usage Analytics -->
+  <div id="analytics-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>📊 使用分析</h2>
+        <button class="modal-close" id="analytics-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="analytics-summary" class="analytics-summary"></div>
+        <div id="analytics-list" class="analytics-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Version History -->
+  <div id="version-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>🕘 版本历史</h2>
+        <button class="modal-close" id="version-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="version-list" class="version-list"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: WebDAV Sync Config -->
   <div id="webdav-modal" class="modal" style="display: none;">
     <div class="modal-content">
@@ -317,6 +362,7 @@
     </div>
   </div>
 
+  <script src="pro-utils.js"></script>
   <script src="storage.js"></script>
   <script src="options.js"></script>
 </body>

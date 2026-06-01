@@ -5,7 +5,9 @@ const STORAGE_KEYS = {
   CATEGORIES: 'categories',
   API_CONFIGS: 'apiConfigs',
   ACTIVE_CONFIG: 'activeConfigId',
-  LANGUAGE: 'language'
+  LANGUAGE: 'language',
+  PROMPT_VERSIONS: 'promptVersions',
+  USAGE_EVENTS: 'usageEvents'
 };
 
 // Default categories
@@ -44,7 +46,9 @@ async function initializeStorage() {
       [STORAGE_KEYS.PROMPTS]: [],
       [STORAGE_KEYS.API_CONFIGS]: [],
       [STORAGE_KEYS.ACTIVE_CONFIG]: null,
-      [STORAGE_KEYS.LANGUAGE]: 'zh'
+      [STORAGE_KEYS.LANGUAGE]: 'zh',
+      [STORAGE_KEYS.PROMPT_VERSIONS]: [],
+      [STORAGE_KEYS.USAGE_EVENTS]: []
     });
   }
 }
@@ -63,6 +67,9 @@ async function addPrompt(prompt) {
   prompt.usageCount = prompt.usageCount || 0;
   prompt.favorite = prompt.favorite || false;
   prompt.tags = prompt.tags || [];
+  prompt.slashCommand = normalizePromptSlashCommand(prompt.slashCommand || '');
+  prompt.rating = Number(prompt.rating) || 0;
+  prompt.lastUsedAt = prompt.lastUsedAt || null;
   prompts.unshift(prompt);
   await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: prompts });
   return prompt;
@@ -72,7 +79,14 @@ async function updatePrompt(id, updates) {
   const prompts = await getPrompts();
   const index = prompts.findIndex(p => p.id === id);
   if (index !== -1) {
-    prompts[index] = { ...prompts[index], ...updates, updatedAt: Date.now() };
+    await savePromptVersion(prompts[index], updates);
+    prompts[index] = {
+      ...prompts[index],
+      ...updates,
+      slashCommand: normalizePromptSlashCommand(updates.slashCommand ?? prompts[index].slashCommand ?? ''),
+      rating: Number(updates.rating ?? prompts[index].rating ?? 0),
+      updatedAt: Date.now()
+    };
     await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: prompts });
     return prompts[index];
   }
@@ -89,6 +103,88 @@ async function deletePrompts(ids) {
   const prompts = await getPrompts();
   const filtered = prompts.filter(p => !ids.includes(p.id));
   await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: filtered });
+}
+
+function normalizePromptSlashCommand(value) {
+  if (!value) return '';
+  const command = value.trim().replace(/^\/+/, '').toLowerCase();
+  return command ? '/' + command.replace(/\s+/g, '-') : '';
+}
+
+async function getPromptVersions(promptId) {
+  const data = await chrome.storage.local.get([STORAGE_KEYS.PROMPT_VERSIONS]);
+  const versions = data[STORAGE_KEYS.PROMPT_VERSIONS] || [];
+  return versions
+    .filter(version => version.promptId === promptId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+async function savePromptVersion(prompt, updates = {}) {
+  const trackedFields = ['title', 'content', 'categoryId', 'tags', 'slashCommand', 'rating'];
+  const hasTrackedChange = trackedFields.some(field =>
+    updates[field] !== undefined && JSON.stringify(updates[field]) !== JSON.stringify(prompt[field])
+  );
+  if (!hasTrackedChange) return null;
+
+  const data = await chrome.storage.local.get([STORAGE_KEYS.PROMPT_VERSIONS]);
+  const versions = data[STORAGE_KEYS.PROMPT_VERSIONS] || [];
+  const version = {
+    id: 'ver_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    promptId: prompt.id,
+    createdAt: Date.now(),
+    snapshot: {
+      title: prompt.title,
+      content: prompt.content,
+      categoryId: prompt.categoryId,
+      tags: prompt.tags || [],
+      slashCommand: prompt.slashCommand || '',
+      rating: Number(prompt.rating) || 0,
+      updatedAt: prompt.updatedAt || prompt.createdAt || Date.now()
+    }
+  };
+
+  versions.unshift(version);
+  await chrome.storage.local.set({ [STORAGE_KEYS.PROMPT_VERSIONS]: versions.slice(0, 500) });
+  return version;
+}
+
+async function restorePromptVersion(promptId, versionId) {
+  const versions = await getPromptVersions(promptId);
+  const version = versions.find(item => item.id === versionId);
+  if (!version) return null;
+  return updatePrompt(promptId, version.snapshot);
+}
+
+async function recordPromptUsage(promptId, meta = {}) {
+  const prompts = await getPrompts();
+  const prompt = prompts.find(item => item.id === promptId);
+  const timestamp = Date.now();
+  if (prompt) {
+    prompt.usageCount = (prompt.usageCount || 0) + 1;
+    prompt.lastUsedAt = timestamp;
+    prompt.updatedAt = timestamp;
+  }
+
+  const data = await chrome.storage.local.get([STORAGE_KEYS.USAGE_EVENTS]);
+  const usageEvents = data[STORAGE_KEYS.USAGE_EVENTS] || [];
+  usageEvents.unshift({
+    id: 'use_' + timestamp + '_' + Math.random().toString(36).slice(2, 8),
+    promptId,
+    action: meta.action || 'insert',
+    host: meta.host || '',
+    url: meta.url || '',
+    createdAt: timestamp
+  });
+
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.PROMPTS]: prompts,
+    [STORAGE_KEYS.USAGE_EVENTS]: usageEvents.slice(0, 1000)
+  });
+}
+
+async function getUsageEvents() {
+  const data = await chrome.storage.local.get([STORAGE_KEYS.USAGE_EVENTS]);
+  return data[STORAGE_KEYS.USAGE_EVENTS] || [];
 }
 
 // Category CRUD
@@ -238,7 +334,9 @@ async function exportData() {
     STORAGE_KEYS.CATEGORIES,
     STORAGE_KEYS.API_CONFIGS,
     STORAGE_KEYS.ACTIVE_CONFIG,
-    STORAGE_KEYS.LANGUAGE
+    STORAGE_KEYS.LANGUAGE,
+    STORAGE_KEYS.PROMPT_VERSIONS,
+    STORAGE_KEYS.USAGE_EVENTS
   ]);
   return JSON.stringify(data, null, 2);
 }
@@ -255,5 +353,7 @@ async function importData(jsonString) {
   if (sanitized.prompts && !Array.isArray(sanitized.prompts)) throw new Error('prompts 必须是数组');
   if (sanitized.categories && !Array.isArray(sanitized.categories)) throw new Error('categories 必须是数组');
   if (sanitized.apiConfigs && !Array.isArray(sanitized.apiConfigs)) throw new Error('apiConfigs 必须是数组');
+  if (sanitized.promptVersions && !Array.isArray(sanitized.promptVersions)) throw new Error('promptVersions 必须是数组');
+  if (sanitized.usageEvents && !Array.isArray(sanitized.usageEvents)) throw new Error('usageEvents 必须是数组');
   await chrome.storage.local.set(sanitized);
 }

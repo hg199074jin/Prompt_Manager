@@ -1,6 +1,6 @@
 // background.js - Background script for AI polish and update checks
 
-importScripts('context-menu-utils.js');
+importScripts('context-menu-utils.js', 'pro-utils.js');
 
 // AI Polish system prompt
 const SYSTEM_PROMPT = `你是一位专业的 AI 提示词工程师。你的任务是优化用户提供的提示词，使其更清晰、更有效、更容易被 AI 理解。
@@ -123,6 +123,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     getWebdavSyncState().then(sendResponse);
     return true;
   }
+  if (request.type === 'RECORD_PROMPT_USAGE') {
+    recordPromptUsageFromBackground(request.promptId, request.meta || {}).then(sendResponse);
+    return true;
+  }
 });
 
 // Update check and sync on startup and install
@@ -162,7 +166,7 @@ async function setWebdavSyncState(state) {
 let _syncInProgress = false;
 let _debounceTimer = null;
 
-const SYNC_KEYS = ['prompts', 'categories', 'apiConfigs', 'activeConfigId', 'language'];
+const SYNC_KEYS = ['prompts', 'categories', 'apiConfigs', 'activeConfigId', 'language', 'promptVersions', 'usageEvents'];
 
 // Simple string hash for change detection
 function simpleHash(str) {
@@ -192,7 +196,9 @@ async function buildSyncPayload() {
     categories: data.categories || [],
     apiConfigs: data.apiConfigs || [],
     activeConfigId: data.activeConfigId || null,
-    language: data.language || 'zh'
+    language: data.language || 'zh',
+    promptVersions: data.promptVersions || [],
+    usageEvents: data.usageEvents || []
   };
 }
 
@@ -230,7 +236,7 @@ function buildWebdavUrl(config) {
 
 // Validate sync data structure
 function validateSyncData(data) {
-  const allowedKeys = ['prompts', 'categories', 'apiConfigs', 'activeConfigId', 'language'];
+  const allowedKeys = ['prompts', 'categories', 'apiConfigs', 'activeConfigId', 'language', 'promptVersions', 'usageEvents'];
   const sanitized = {};
   for (const key of allowedKeys) {
     if (data[key] !== undefined) {
@@ -240,6 +246,8 @@ function validateSyncData(data) {
   if (sanitized.prompts && !Array.isArray(sanitized.prompts)) throw new Error('远程数据格式错误：prompts 必须是数组');
   if (sanitized.categories && !Array.isArray(sanitized.categories)) throw new Error('远程数据格式错误：categories 必须是数组');
   if (sanitized.apiConfigs && !Array.isArray(sanitized.apiConfigs)) throw new Error('远程数据格式错误：apiConfigs 必须是数组');
+  if (sanitized.promptVersions && !Array.isArray(sanitized.promptVersions)) throw new Error('远程数据格式错误：promptVersions 必须是数组');
+  if (sanitized.usageEvents && !Array.isArray(sanitized.usageEvents)) throw new Error('远程数据格式错误：usageEvents 必须是数组');
   return sanitized;
 }
 
@@ -564,15 +572,38 @@ function getPromptIdFromMenuItem(menuItemId) {
 function insertPromptIntoActiveEditable(rawContent) {
   const TEMPLATE_VARIABLE_PATTERN = /\{\{([^}]+)\}\}/g;
 
+  function parseVariableToken(token) {
+    const trimmed = token.trim();
+    const optionParts = trimmed.split('|');
+    const left = optionParts[0].trim();
+    const options = optionParts.length > 1
+      ? optionParts.slice(1).join('|').split(',').map(item => item.trim()).filter(Boolean)
+      : [];
+    const segments = left.split(':').map(item => item.trim());
+    const name = segments[0] || '';
+    let label = name;
+    let type = options.length > 0 ? 'select' : 'text';
+    let defaultValue = '';
+
+    if (segments.length === 2) {
+      label = segments[1] || name;
+    } else if (segments.length >= 3) {
+      type = segments[1] || type;
+      defaultValue = segments.slice(2).join(':');
+    }
+
+    return { name, label, type, defaultValue, options };
+  }
+
   function extractVariables(content) {
     const variables = [];
     const seen = new Set();
     let match;
     while ((match = TEMPLATE_VARIABLE_PATTERN.exec(content)) !== null) {
-      const name = match[1].trim();
-      if (name && !seen.has(name)) {
-        seen.add(name);
-        variables.push(name);
+      const variable = parseVariableToken(match[1]);
+      if (variable.name && !seen.has(variable.name)) {
+        seen.add(variable.name);
+        variables.push(variable);
       }
     }
     TEMPLATE_VARIABLE_PATTERN.lastIndex = 0;
@@ -580,8 +611,9 @@ function insertPromptIntoActiveEditable(rawContent) {
   }
 
   function fillVariables(content, values) {
-    return content.replace(TEMPLATE_VARIABLE_PATTERN, (placeholder, rawName) => {
-      const value = values[rawName.trim()];
+    return content.replace(TEMPLATE_VARIABLE_PATTERN, (placeholder, rawToken) => {
+      const variable = parseVariableToken(rawToken);
+      const value = values[variable.name];
       return value ? value : placeholder;
     });
   }
@@ -607,11 +639,11 @@ function insertPromptIntoActiveEditable(rawContent) {
 
   const values = {};
   for (const variable of extractVariables(rawContent)) {
-    const value = window.prompt(`请输入 ${variable}`, '');
+    const value = window.prompt(`请输入 ${variable.label}`, variable.defaultValue || variable.options[0] || '');
     if (value === null) {
       return { success: false, canceled: true };
     }
-    values[variable] = value.trim();
+    values[variable.name] = value.trim();
   }
 
   const content = fillVariables(rawContent, values);
@@ -696,12 +728,46 @@ async function insertPromptFromMenu(info, tab) {
     const result = results?.[0]?.result;
     if (!result?.success) return;
 
-    prompt.usageCount = (prompt.usageCount || 0) + 1;
-    prompt.updatedAt = Date.now();
-    await chrome.storage.local.set({ prompts });
+    await recordPromptUsageFromBackground(prompt.id, {
+      action: 'context-menu',
+      host: new URL(tab.url || 'https://unknown.local').host,
+      url: tab.url || ''
+    });
   } catch (error) {
     console.log('插入提示词失败:', error);
   }
+}
+
+async function recordPromptUsageFromBackground(promptId, meta = {}) {
+  if (!promptId) return { success: false };
+
+  const data = await chrome.storage.local.get(['prompts', 'usageEvents']);
+  const prompts = data.prompts || [];
+  const usageEvents = data.usageEvents || [];
+  const prompt = prompts.find(item => item.id === promptId);
+  const timestamp = Date.now();
+
+  if (prompt) {
+    prompt.usageCount = (prompt.usageCount || 0) + 1;
+    prompt.lastUsedAt = timestamp;
+    prompt.updatedAt = timestamp;
+  }
+
+  usageEvents.unshift({
+    id: 'use_' + timestamp + '_' + Math.random().toString(36).slice(2, 8),
+    promptId,
+    action: meta.action || 'insert',
+    host: meta.host || '',
+    url: meta.url || '',
+    createdAt: timestamp
+  });
+
+  await chrome.storage.local.set({
+    prompts,
+    usageEvents: usageEvents.slice(0, 1000)
+  });
+
+  return { success: true };
 }
 
 chrome.runtime.onInstalled.addListener(() => {
