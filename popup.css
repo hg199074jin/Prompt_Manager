@@ -161,6 +161,43 @@ body {
   color: #1976d2;
 }
 
+.prompt-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.favorite-btn {
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: opacity 0.2s;
+  user-select: none;
+}
+
+.favorite-btn:hover {
+  opacity: 0.7;
+}
+
+.favorite-btn.active {
+  opacity: 1;
+}
+
+.prompt-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.prompt-tag {
+  background: #f3e5f5;
+  color: #7b1fa2;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
 .prompt-content {
   font-size: 12px;
   color: #666;
@@ -245,6 +282,80 @@ body {
 
 .toast.show {
   opacity: 1;
+}
+
+/* Template Variables Modal */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 10px;
+  width: 320px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+  font-size: 15px;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #999;
+}
+
+.modal-body {
+  padding: 12px 16px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid #eee;
+}
+
+.var-group {
+  margin-bottom: 10px;
+}
+
+.var-group label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.var-group input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
 }
 
 /* Sync Status Indicator */

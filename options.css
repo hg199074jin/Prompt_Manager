@@ -236,6 +236,28 @@ body {
   font-size: 12px;
 }
 
+.prompt-card-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.favorite-star {
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: opacity 0.2s;
+  user-select: none;
+}
+
+.favorite-star:hover {
+  opacity: 0.7;
+}
+
+.favorite-star.active {
+  opacity: 1;
+}
+
 .prompt-card-content {
   font-size: 14px;
   color: #666;
@@ -590,4 +612,94 @@ body {
   color: #795548;
   line-height: 1.5;
   margin-bottom: 16px;
+}
+
+/* Tags Input */
+.tags-input-container {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 36px;
+  cursor: text;
+}
+
+.tags-input-container:focus-within {
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+.tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tag-chip {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tag-remove {
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: #666;
+}
+
+.tag-remove:hover {
+  color: #d32f2f;
+}
+
+#tags-input {
+  border: none;
+  outline: none;
+  font-size: 13px;
+  flex: 1;
+  min-width: 80px;
+  padding: 2px 0;
+}
+
+.tags-suggestions {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  margin-top: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.tag-suggestion-item {
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tag-suggestion-item:hover {
+  background: #f0f0f0;
+}
+
+.prompt-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.prompt-card-tag {
+  background: #f3e5f5;
+  color: #7b1fa2;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
 }

@@ -8,6 +8,7 @@ let currentEmoji = '📝';
 let currentAiPromptId = null;
 let aiResult = '';
 let currentApiConfigId = null;
+let currentTags = [];
 
 // Common emojis for picker
 const COMMON_EMOJIS = [
@@ -25,7 +26,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   await renderPrompts();
   setupEventListeners();
   await updateSyncStatusIndicator();
+
+  // Handle pending save text from context menu or keyboard shortcut
+  await handlePendingSaveText();
 });
+
+// Listen for _pendingSaveText changes (when options page is already open)
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes._pendingSaveText) {
+    const newValue = changes._pendingSaveText.newValue;
+    if (newValue) {
+      chrome.storage.local.remove(['_pendingSaveText']);
+      openPromptModal();
+      setTimeout(() => {
+        document.getElementById('prompt-content').value = newValue;
+      }, 100);
+    }
+  }
+});
+
+async function handlePendingSaveText() {
+  const data = await chrome.storage.local.get(['_pendingSaveText']);
+  if (data._pendingSaveText) {
+    await chrome.storage.local.remove(['_pendingSaveText']);
+    openPromptModal();
+    setTimeout(() => {
+      document.getElementById('prompt-content').value = data._pendingSaveText;
+    }, 100);
+  }
+}
 
 // Setup event listeners
 function setupEventListeners() {
@@ -106,6 +135,48 @@ function setupEventListeners() {
   document.getElementById('webdav-delete').addEventListener('click', clearWebdavConfig);
   document.getElementById('webdav-password-toggle').addEventListener('click', toggleWebdavPasswordVisibility);
 
+  // Tags input
+  const tagsInput = document.getElementById('tags-input');
+  const tagsSuggestions = document.getElementById('tags-suggestions');
+
+  tagsInput.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addTag(tagsInput.value);
+      tagsInput.value = '';
+      tagsSuggestions.style.display = 'none';
+    }
+  });
+
+  tagsInput.addEventListener('input', async (e) => {
+    const value = e.target.value.trim().toLowerCase();
+    if (!value) {
+      tagsSuggestions.style.display = 'none';
+      return;
+    }
+    const allTags = await getAllTags();
+    const filtered = allTags.filter(t => t.toLowerCase().includes(value) && !currentTags.includes(t));
+    if (filtered.length === 0) {
+      tagsSuggestions.style.display = 'none';
+      return;
+    }
+    tagsSuggestions.innerHTML = filtered.map(t =>
+      `<div class="tag-suggestion-item">${escapeHtml(t)}</div>`
+    ).join('');
+    tagsSuggestions.style.display = 'block';
+    tagsSuggestions.querySelectorAll('.tag-suggestion-item').forEach(item => {
+      item.addEventListener('click', () => {
+        addTag(item.textContent);
+        tagsInput.value = '';
+        tagsSuggestions.style.display = 'none';
+      });
+    });
+  });
+
+  tagsInput.addEventListener('blur', () => {
+    setTimeout(() => { tagsSuggestions.style.display = 'none'; }, 200);
+  });
+
   // Sidebar resizer
   const resizer = document.getElementById('sidebar-resizer');
   const sidebar = document.querySelector('.sidebar');
@@ -157,13 +228,22 @@ async function renderCategories() {
   allItem.addEventListener('click', () => selectCategory('all'));
   listContainer.appendChild(allItem);
 
+  // Favorites
+  const favCount = prompts.filter(p => p.favorite).length;
+  const favItem = document.createElement('div');
+  favItem.className = 'category-item' + (currentCategory === 'favorites' ? ' active' : '');
+  favItem.dataset.category = 'favorites';
+  favItem.innerHTML = '<span class="category-emoji">⭐</span><span class="category-name">收藏</span><span class="category-count">' + favCount + '</span>';
+  favItem.addEventListener('click', () => selectCategory('favorites'));
+  listContainer.appendChild(favItem);
+
   categories.forEach((cat, i) => {
     const item = document.createElement('div');
     item.className = 'category-item' + (currentCategory === cat.id ? ' active' : '');
     item.dataset.category = cat.id;
     item.innerHTML = `
-      <span class="category-emoji">${cat.emoji}</span>
-      <span class="category-name">${cat.name}</span>
+      <span class="category-emoji">${escapeHtml(cat.emoji)}</span>
+      <span class="category-name">${escapeHtml(cat.name)}</span>
       <span class="category-count">${counts[cat.id] || 0}</span>
     `;
     item.addEventListener('click', () => selectCategory(cat.id));
@@ -269,14 +349,17 @@ async function renderPrompts() {
 
   let filtered = prompts;
 
-  if (currentCategory !== 'all') {
+  if (currentCategory === 'favorites') {
+    filtered = filtered.filter(p => p.favorite);
+  } else if (currentCategory !== 'all') {
     filtered = filtered.filter(p => p.categoryId === currentCategory);
   }
 
   if (searchQuery) {
     filtered = filtered.filter(p =>
-      p.title.toLowerCase().includes(searchQuery) ||
-      p.content.toLowerCase().includes(searchQuery)
+      (p.title || '').toLowerCase().includes(searchQuery) ||
+      (p.content || '').toLowerCase().includes(searchQuery) ||
+      (p.tags || []).some(t => t.toLowerCase().includes(searchQuery))
     );
   }
 
@@ -293,14 +376,19 @@ async function renderPrompts() {
     const category = categories.find(c => c.id === prompt.categoryId);
     const card = document.createElement('div');
     card.className = 'prompt-card';
+    const tags = (prompt.tags || []).map(t => `<span class="prompt-card-tag">${escapeHtml(t)}</span>`).join('');
     card.innerHTML = `
       <div class="prompt-card-header">
         <div>
           <input type="checkbox" class="prompt-checkbox" data-id="${prompt.id}" ${selectedPrompts.has(prompt.id) ? 'checked' : ''}>
           <span class="prompt-card-title">${escapeHtml(prompt.title)}</span>
         </div>
-        <span class="prompt-card-category">${category ? category.emoji + ' ' + category.name : '未分类'}</span>
+        <div class="prompt-card-header-right">
+          <span class="prompt-card-category">${category ? escapeHtml(category.emoji + ' ' + category.name) : '未分类'}</span>
+          <span class="favorite-star ${prompt.favorite ? 'active' : ''}" data-id="${prompt.id}" title="收藏">⭐</span>
+        </div>
       </div>
+      ${tags ? `<div class="prompt-card-tags">${tags}</div>` : ''}
       <div class="prompt-card-content">${escapeHtml(prompt.content)}</div>
       <div class="prompt-card-actions">
         <button class="btn btn-small btn-primary copy-btn">📋 复制</button>
@@ -339,6 +427,11 @@ async function renderPrompts() {
       updateBatchButtons();
     });
 
+    card.querySelector('.favorite-star').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFavorite(prompt.id);
+    });
+
     listContainer.appendChild(card);
   });
 
@@ -347,6 +440,7 @@ async function renderPrompts() {
 
 function openPromptModal(promptId = null) {
   currentPromptId = promptId;
+  currentTags = [];
   const modal = document.getElementById('prompt-modal');
   const title = document.getElementById('modal-title');
   const titleInput = document.getElementById('prompt-title');
@@ -367,18 +461,57 @@ function openPromptModal(promptId = null) {
           titleInput.value = prompt.title;
           contentInput.value = prompt.content;
           categorySelect.value = prompt.categoryId;
+          currentTags = [...(prompt.tags || [])];
+          renderTagsInput();
         }
       });
     } else {
       titleInput.value = '';
       contentInput.value = '';
-      if (currentCategory !== 'all') {
+      if (currentCategory !== 'all' && currentCategory !== 'favorites') {
         categorySelect.value = currentCategory;
       }
+      renderTagsInput();
     }
   });
 
   modal.style.display = 'flex';
+}
+
+// ============================================================
+// Tags Input Component
+// ============================================================
+
+function renderTagsInput() {
+  const tagsList = document.getElementById('tags-list');
+  tagsList.innerHTML = '';
+  currentTags.forEach(tag => {
+    const chip = document.createElement('span');
+    chip.className = 'tag-chip';
+    chip.innerHTML = `${escapeHtml(tag)}<span class="tag-remove" data-tag="${escapeHtml(tag)}">&times;</span>`;
+    chip.querySelector('.tag-remove').addEventListener('click', () => removeTag(tag));
+    tagsList.appendChild(chip);
+  });
+}
+
+function addTag(tag) {
+  tag = tag.trim();
+  if (!tag) return;
+  if (currentTags.includes(tag)) return;
+  currentTags.push(tag);
+  renderTagsInput();
+}
+
+function removeTag(tag) {
+  currentTags = currentTags.filter(t => t !== tag);
+  renderTagsInput();
+}
+
+async function getAllTags() {
+  const prompts = await getPrompts();
+  const tagSet = new Set();
+  prompts.forEach(p => (p.tags || []).forEach(t => tagSet.add(t)));
+  return [...tagSet];
 }
 
 function closePromptModal() {
@@ -390,6 +523,7 @@ async function savePrompt() {
   const title = document.getElementById('prompt-title').value.trim();
   const content = document.getElementById('prompt-content').value.trim();
   const categoryId = document.getElementById('prompt-category').value;
+  const tags = currentTags.filter(t => t.trim());
 
   if (!title || !content) {
     showToast('请填写标题和内容');
@@ -397,10 +531,10 @@ async function savePrompt() {
   }
 
   if (currentPromptId) {
-    await updatePrompt(currentPromptId, { title, content, categoryId });
+    await updatePrompt(currentPromptId, { title, content, categoryId, tags });
     showToast('提示词已更新');
   } else {
-    await addPrompt({ title, content, categoryId });
+    await addPrompt({ title, content, categoryId, tags });
     showToast('提示词已添加');
   }
 
@@ -413,6 +547,18 @@ async function deletePromptById(id) {
   if (confirm('确定要删除这条提示词吗？')) {
     await deletePrompt(id);
     showToast('提示词已删除');
+    await renderCategories();
+    await renderPrompts();
+  }
+}
+
+async function toggleFavorite(id) {
+  const prompts = await getPrompts();
+  const prompt = prompts.find(p => p.id === id);
+  if (prompt) {
+    prompt.favorite = !prompt.favorite;
+    prompt.updatedAt = Date.now();
+    await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: prompts });
     await renderCategories();
     await renderPrompts();
   }
@@ -694,6 +840,20 @@ async function saveApiConfig() {
     return;
   }
 
+  // Request host permission for the API URL
+  try {
+    const urlObj = new URL(apiUrl);
+    const origin = urlObj.origin + '/*';
+    const granted = await chrome.permissions.request({ origins: [origin] });
+    if (!granted) {
+      showToast('需要授权访问该 API 地址');
+      return;
+    }
+  } catch (e) {
+    showToast('API 地址格式不正确');
+    return;
+  }
+
   if (currentApiConfigId) {
     await updateApiConfig(currentApiConfigId, { name, apiUrl, apiKey, model });
     showToast('配置已更新');
@@ -817,6 +977,22 @@ async function saveWebdavConfig() {
     return;
   }
 
+  // Request host permission for the WebDAV server URL
+  if (enabled && serverUrl) {
+    try {
+      const urlObj = new URL(serverUrl);
+      const origin = urlObj.origin + '/*';
+      const granted = await chrome.permissions.request({ origins: [origin] });
+      if (!granted) {
+        showToast('需要授权访问该 WebDAV 服务器地址');
+        return;
+      }
+    } catch (e) {
+      showToast('服务器地址格式不正确');
+      return;
+    }
+  }
+
   const config = {
     serverUrl,
     username,
@@ -840,6 +1016,20 @@ async function testWebdavConnectionFromUI() {
 
   if (!serverUrl || !username || !password) {
     showToast('请填写服务器地址、用户名和密码');
+    return;
+  }
+
+  // Request host permission for the WebDAV server URL
+  try {
+    const urlObj = new URL(serverUrl);
+    const origin = urlObj.origin + '/*';
+    const granted = await chrome.permissions.request({ origins: [origin] });
+    if (!granted) {
+      showToast('需要授权访问该 WebDAV 服务器地址');
+      return;
+    }
+  } catch (e) {
+    showToast('服务器地址格式不正确');
     return;
   }
 

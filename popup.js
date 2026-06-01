@@ -2,6 +2,7 @@
 
 let currentCategory = 'all';
 let searchQuery = '';
+let currentVariablesPrompt = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -17,7 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 function setupEventListeners() {
   // Search
   document.getElementById('search-input').addEventListener('input', debounce((e) => {
-    searchQuery = e.target.value.toLowerCase();
+    searchQuery = e.target.value;
     renderPrompts();
   }, 300));
 
@@ -43,7 +44,23 @@ async function renderCategories() {
   const categories = await getCategories();
   const tabsContainer = document.getElementById('category-tabs');
 
-  tabsContainer.innerHTML = '<button class="tab active" data-category="all">全部</button>';
+  tabsContainer.innerHTML = '';
+
+  // All tab
+  const allTab = document.createElement('button');
+  allTab.className = 'tab active';
+  allTab.dataset.category = 'all';
+  allTab.textContent = '全部';
+  allTab.addEventListener('click', () => selectCategory('all'));
+  tabsContainer.appendChild(allTab);
+
+  // Favorites tab
+  const favTab = document.createElement('button');
+  favTab.className = 'tab';
+  favTab.dataset.category = 'favorites';
+  favTab.textContent = '⭐ 收藏';
+  favTab.addEventListener('click', () => selectCategory('favorites'));
+  tabsContainer.appendChild(favTab);
 
   categories.forEach(cat => {
     const tab = document.createElement('button');
@@ -52,10 +69,6 @@ async function renderCategories() {
     tab.textContent = `${cat.emoji} ${cat.name}`;
     tab.addEventListener('click', () => selectCategory(cat.id));
     tabsContainer.appendChild(tab);
-  });
-
-  tabsContainer.querySelector('[data-category="all"]').addEventListener('click', () => {
-    selectCategory('all');
   });
 }
 
@@ -78,19 +91,34 @@ async function renderPrompts() {
 
   let filtered = prompts;
 
-  if (currentCategory !== 'all') {
+  if (currentCategory === 'favorites') {
+    filtered = filtered.filter(p => p.favorite);
+  } else if (currentCategory !== 'all') {
     filtered = filtered.filter(p => p.categoryId === currentCategory);
   }
 
   if (searchQuery) {
-    filtered = filtered.filter(p =>
-      p.title.toLowerCase().includes(searchQuery) ||
-      p.content.toLowerCase().includes(searchQuery)
-    );
+    const tagMatch = searchQuery.match(/^#(.+)$/);
+    if (tagMatch) {
+      // Tag search mode
+      const tagQuery = tagMatch[1].toLowerCase();
+      filtered = filtered.filter(p =>
+        (p.tags || []).some(t => t.toLowerCase().includes(tagQuery))
+      );
+    } else {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(p =>
+        (p.title || '').toLowerCase().includes(q) ||
+        (p.content || '').toLowerCase().includes(q) ||
+        (p.tags || []).some(t => t.toLowerCase().includes(q))
+      );
+    }
   }
 
-  // Sort by usage frequency, fallback to createdAt
+  // Sort: favorites first, then by usage frequency, fallback to createdAt
   filtered.sort((a, b) => {
+    if (a.favorite && !b.favorite) return -1;
+    if (!a.favorite && b.favorite) return 1;
     const aFreq = a.usageCount || 0;
     const bFreq = b.usageCount || 0;
     if (aFreq > 0 && bFreq > 0) return bFreq - aFreq;
@@ -113,22 +141,45 @@ async function renderPrompts() {
     const category = categories.find(c => c.id === prompt.categoryId);
     const item = document.createElement('div');
     item.className = 'prompt-item';
+    const tags = (prompt.tags || []);
+    const tagsHtml = tags.length > 0
+      ? `<div class="prompt-tags">${tags.map(t => `<span class="prompt-tag">${escapeHtml(t)}</span>`).join('')}</div>`
+      : '';
+
     item.innerHTML = `
       <div class="prompt-item-header">
         <span class="prompt-title">${escapeHtml(prompt.title)}</span>
-        <span class="prompt-category">${category ? category.emoji + ' ' + category.name : '未分类'}</span>
+        <div class="prompt-item-actions">
+          <span class="prompt-category">${category ? escapeHtml(category.emoji + ' ' + category.name) : '未分类'}</span>
+          <span class="favorite-btn ${prompt.favorite ? 'active' : ''}" data-id="${prompt.id}" title="收藏">⭐</span>
+        </div>
       </div>
+      ${tagsHtml}
       <div class="prompt-content">${escapeHtml(prompt.content)}</div>
     `;
 
     item.addEventListener('click', () => {
-      copyToClipboard(prompt.content);
+      const variables = extractVariables(prompt.content);
+      if (variables.length > 0) {
+        showVariablesModal(prompt, variables);
+      } else {
+        copyToClipboard(prompt.content);
+      }
       incrementUsageCount(prompt.id);
     });
 
     item.addEventListener('dblclick', () => {
       chrome.runtime.openOptionsPage();
     });
+
+    // Favorite button
+    const favBtn = item.querySelector('.favorite-btn');
+    if (favBtn) {
+      favBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFavorite(prompt.id);
+      });
+    }
 
     listContainer.appendChild(item);
   });
@@ -142,6 +193,18 @@ async function incrementUsageCount(promptId) {
     prompt.usageCount = (prompt.usageCount || 0) + 1;
     prompt.updatedAt = Date.now();
     await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: prompts });
+  }
+}
+
+// Toggle favorite
+async function toggleFavorite(promptId) {
+  const prompts = await getPrompts();
+  const prompt = prompts.find(p => p.id === promptId);
+  if (prompt) {
+    prompt.favorite = !prompt.favorite;
+    prompt.updatedAt = Date.now();
+    await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: prompts });
+    await renderPrompts();
   }
 }
 
@@ -268,3 +331,69 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+// ============================================================
+// Template Variables
+// ============================================================
+
+function extractVariables(content) {
+  const matches = content.match(/\{\{([^}]+)\}\}/g);
+  if (!matches) return [];
+  const unique = [...new Set(matches)];
+  return unique.map(m => m.replace(/\{\{|\}\}/g, '').trim());
+}
+
+function showVariablesModal(prompt, variables) {
+  currentVariablesPrompt = prompt;
+  const form = document.getElementById('variables-form');
+  form.innerHTML = '';
+
+  variables.forEach((varName, index) => {
+    const group = document.createElement('div');
+    group.className = 'var-group';
+    const label = document.createElement('label');
+    label.textContent = varName;
+    label.htmlFor = 'var-input-' + index;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'var-input-' + index;
+    input.dataset.var = varName;
+    input.placeholder = '请输入 ' + varName;
+    group.appendChild(label);
+    group.appendChild(input);
+    form.appendChild(group);
+  });
+
+  document.getElementById('variables-modal').style.display = 'flex';
+  const firstInput = form.querySelector('input');
+  if (firstInput) firstInput.focus();
+}
+
+function closeVariablesModal() {
+  document.getElementById('variables-modal').style.display = 'none';
+  currentVariablesPrompt = null;
+}
+
+function confirmVariables() {
+  if (!currentVariablesPrompt) return;
+
+  let content = currentVariablesPrompt.content;
+  const inputs = document.querySelectorAll('#variables-form input[data-var]');
+
+  inputs.forEach(input => {
+    const varName = input.dataset.var;
+    const value = input.value.trim();
+    content = content.replaceAll(`{{${varName}}}`, value || `{{${varName}}}`);
+  });
+
+  copyToClipboard(content);
+  closeVariablesModal();
+}
+
+// Variables modal event listeners
+document.getElementById('variables-modal-close').addEventListener('click', closeVariablesModal);
+document.getElementById('variables-cancel').addEventListener('click', closeVariablesModal);
+document.getElementById('variables-confirm').addEventListener('click', confirmVariables);
+document.getElementById('variables-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'variables-modal') closeVariablesModal();
+});

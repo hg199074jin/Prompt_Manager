@@ -57,10 +57,12 @@ async function getPrompts() {
 
 async function addPrompt(prompt) {
   const prompts = await getPrompts();
-  prompt.id = 'p_' + Date.now();
+  prompt.id = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   prompt.createdAt = Date.now();
   prompt.updatedAt = Date.now();
   prompt.usageCount = prompt.usageCount || 0;
+  prompt.favorite = prompt.favorite || false;
+  prompt.tags = prompt.tags || [];
   prompts.unshift(prompt);
   await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: prompts });
   return prompt;
@@ -98,7 +100,7 @@ async function getCategories() {
 
 async function addCategory(category) {
   const categories = await getCategories();
-  category.id = 'cat_' + Date.now();
+  category.id = 'cat_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   category.isPreset = false;
   category.sortOrder = categories.length;
   categories.push(category);
@@ -172,7 +174,7 @@ async function getActiveConfig() {
 
 async function addApiConfig(config) {
   const configs = await getApiConfigs();
-  config.id = 'config_' + Date.now();
+  config.id = 'config_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   configs.push(config);
   await chrome.storage.local.set({ [STORAGE_KEYS.API_CONFIGS]: configs });
   return config;
@@ -250,5 +252,8 @@ async function importData(jsonString) {
       sanitized[key] = data[key];
     }
   }
+  if (sanitized.prompts && !Array.isArray(sanitized.prompts)) throw new Error('prompts 必须是数组');
+  if (sanitized.categories && !Array.isArray(sanitized.categories)) throw new Error('categories 必须是数组');
+  if (sanitized.apiConfigs && !Array.isArray(sanitized.apiConfigs)) throw new Error('apiConfigs 必须是数组');
   await chrome.storage.local.set(sanitized);
 }

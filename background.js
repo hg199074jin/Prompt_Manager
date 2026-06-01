@@ -219,8 +219,26 @@ async function getLocalLastModified() {
 // Build WebDAV URL
 function buildWebdavUrl(config) {
   const base = config.serverUrl.replace(/\/+$/, '');
+  if (!base.startsWith('https://')) {
+    throw new Error('出于安全考虑，请使用 HTTPS 协议');
+  }
   const path = config.remotePath.replace(/^\/+/, '');
   return `${base}/${path}`;
+}
+
+// Validate sync data structure
+function validateSyncData(data) {
+  const allowedKeys = ['prompts', 'categories', 'apiConfigs', 'activeConfigId', 'language'];
+  const sanitized = {};
+  for (const key of allowedKeys) {
+    if (data[key] !== undefined) {
+      sanitized[key] = data[key];
+    }
+  }
+  if (sanitized.prompts && !Array.isArray(sanitized.prompts)) throw new Error('远程数据格式错误：prompts 必须是数组');
+  if (sanitized.categories && !Array.isArray(sanitized.categories)) throw new Error('远程数据格式错误：categories 必须是数组');
+  if (sanitized.apiConfigs && !Array.isArray(sanitized.apiConfigs)) throw new Error('远程数据格式错误：apiConfigs 必须是数组');
+  return sanitized;
 }
 
 // Get auth header
@@ -259,9 +277,13 @@ async function pullFromRemote(config) {
   const localLastModified = await getLocalLastModified();
 
   if (meta.lastModified > localLastModified) {
+    const sanitized = validateSyncData(data);
     _syncInProgress = true;
-    await chrome.storage.local.set(data);
-    _syncInProgress = false;
+    try {
+      await chrome.storage.local.set(sanitized);
+    } finally {
+      _syncInProgress = false;
+    }
     return { pulled: true, lastModified: meta.lastModified };
   }
 
@@ -432,3 +454,59 @@ async function setupPeriodicPull() {
   const interval = config.syncInterval || 120;
   await chrome.alarms.create('webdav-periodic-pull', { periodInMinutes: interval });
 }
+
+// ============================================================
+// Context Menu
+// ============================================================
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'save-selection',
+    title: '保存为提示词',
+    contexts: ['selection']
+  });
+  chrome.contextMenus.create({
+    id: 'insert-prompt',
+    title: '插入提示词',
+    contexts: ['editable']
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === 'save-selection') {
+    // Save selected text as a new prompt via options page
+    const selectedText = info.selectionText || '';
+    await chrome.storage.local.set({ _pendingSaveText: selectedText });
+    chrome.runtime.openOptionsPage();
+  }
+  if (info.menuItemId === 'insert-prompt') {
+    // Open popup for prompt selection (user clicks to insert)
+    // We can't directly inject from background, so open the popup
+    // The popup will handle insertion via message passing
+  }
+});
+
+// ============================================================
+// Keyboard Shortcuts
+// ============================================================
+
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command === 'save-selection') {
+    // Get selected text from active tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) return;
+
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => window.getSelection().toString()
+      });
+      const selectedText = results[0]?.result || '';
+      await chrome.storage.local.set({ _pendingSaveText: selectedText });
+      chrome.runtime.openOptionsPage();
+    } catch (e) {
+      // Cannot inject into this page (chrome://, etc.)
+      chrome.runtime.openOptionsPage();
+    }
+  }
+});
