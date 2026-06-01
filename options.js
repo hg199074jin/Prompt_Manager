@@ -33,18 +33,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Listen for _pendingSaveText changes (when options page is already open)
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && changes._pendingSaveText) {
-    const newValue = changes._pendingSaveText.newValue;
-    if (newValue) {
-      chrome.storage.local.remove(['_pendingSaveText']);
-      openPromptModal();
-      setTimeout(() => {
-        document.getElementById('prompt-content').value = newValue;
-      }, 100);
+if (chrome.storage?.onChanged?.addListener) {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes._pendingSaveText) {
+      const newValue = changes._pendingSaveText.newValue;
+      if (newValue) {
+        chrome.storage.local.remove(['_pendingSaveText']);
+        openPromptModal();
+        setTimeout(() => {
+          document.getElementById('prompt-content').value = newValue;
+        }, 100);
+      }
     }
-  }
-});
+  });
+}
 
 async function handlePendingSaveText() {
   const data = await chrome.storage.local.get(['_pendingSaveText']);
@@ -404,7 +406,6 @@ async function renderPrompts() {
       </div>
       ${tags ? `<div class="prompt-card-tags">${tags}</div>` : ''}
       <div class="prompt-card-metrics">
-        <span>${escapeHtml(prompt.slashCommand || '未设置快捷指令')}</span>
         <span>使用 ${prompt.usageCount || 0} 次</span>
         <span>${ratingText}</span>
         <span>最近：${escapeHtml(lastUsedText)}</span>
@@ -472,7 +473,6 @@ function openPromptModal(promptId = null) {
   const titleInput = document.getElementById('prompt-title');
   const contentInput = document.getElementById('prompt-content');
   const categorySelect = document.getElementById('prompt-category');
-  const slashInput = document.getElementById('prompt-slash-command');
   const ratingSelect = document.getElementById('prompt-rating');
 
   title.textContent = promptId ? '编辑提示词' : '新建提示词';
@@ -489,7 +489,6 @@ function openPromptModal(promptId = null) {
           titleInput.value = prompt.title;
           contentInput.value = prompt.content;
           categorySelect.value = prompt.categoryId;
-          slashInput.value = prompt.slashCommand || '';
           ratingSelect.value = String(Number(prompt.rating) || 0);
           currentTags = [...(prompt.tags || [])];
           renderTagsInput();
@@ -498,7 +497,6 @@ function openPromptModal(promptId = null) {
     } else {
       titleInput.value = '';
       contentInput.value = '';
-      slashInput.value = '';
       ratingSelect.value = '0';
       if (currentCategory !== 'all' && currentCategory !== 'favorites') {
         categorySelect.value = currentCategory;
@@ -556,7 +554,6 @@ async function savePrompt() {
   const content = document.getElementById('prompt-content').value.trim();
   const categoryId = document.getElementById('prompt-category').value;
   const tags = currentTags.filter(t => t.trim());
-  const slashCommand = normalizeSlashCommand(document.getElementById('prompt-slash-command').value);
   const rating = Number(document.getElementById('prompt-rating').value) || 0;
 
   if (!title || !content) {
@@ -565,10 +562,10 @@ async function savePrompt() {
   }
 
   if (currentPromptId) {
-    await updatePrompt(currentPromptId, { title, content, categoryId, tags, slashCommand, rating });
+    await updatePrompt(currentPromptId, { title, content, categoryId, tags, rating });
     showToast('提示词已更新');
   } else {
-    await addPrompt({ title, content, categoryId, tags, slashCommand, rating });
+    await addPrompt({ title, content, categoryId, tags, rating });
     showToast('提示词已添加');
   }
 

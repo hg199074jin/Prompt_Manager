@@ -67,7 +67,6 @@ async function addPrompt(prompt) {
   prompt.usageCount = prompt.usageCount || 0;
   prompt.favorite = prompt.favorite || false;
   prompt.tags = prompt.tags || [];
-  prompt.slashCommand = normalizePromptSlashCommand(prompt.slashCommand || '');
   prompt.rating = Number(prompt.rating) || 0;
   prompt.lastUsedAt = prompt.lastUsedAt || null;
   prompts.unshift(prompt);
@@ -83,7 +82,6 @@ async function updatePrompt(id, updates) {
     prompts[index] = {
       ...prompts[index],
       ...updates,
-      slashCommand: normalizePromptSlashCommand(updates.slashCommand ?? prompts[index].slashCommand ?? ''),
       rating: Number(updates.rating ?? prompts[index].rating ?? 0),
       updatedAt: Date.now()
     };
@@ -105,12 +103,6 @@ async function deletePrompts(ids) {
   await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: filtered });
 }
 
-function normalizePromptSlashCommand(value) {
-  if (!value) return '';
-  const command = value.trim().replace(/^\/+/, '').toLowerCase();
-  return command ? '/' + command.replace(/\s+/g, '-') : '';
-}
-
 async function getPromptVersions(promptId) {
   const data = await chrome.storage.local.get([STORAGE_KEYS.PROMPT_VERSIONS]);
   const versions = data[STORAGE_KEYS.PROMPT_VERSIONS] || [];
@@ -120,7 +112,7 @@ async function getPromptVersions(promptId) {
 }
 
 async function savePromptVersion(prompt, updates = {}) {
-  const trackedFields = ['title', 'content', 'categoryId', 'tags', 'slashCommand', 'rating'];
+  const trackedFields = ['title', 'content', 'categoryId', 'tags', 'rating'];
   const hasTrackedChange = trackedFields.some(field =>
     updates[field] !== undefined && JSON.stringify(updates[field]) !== JSON.stringify(prompt[field])
   );
@@ -137,7 +129,6 @@ async function savePromptVersion(prompt, updates = {}) {
       content: prompt.content,
       categoryId: prompt.categoryId,
       tags: prompt.tags || [],
-      slashCommand: prompt.slashCommand || '',
       rating: Number(prompt.rating) || 0,
       updatedAt: prompt.updatedAt || prompt.createdAt || Date.now()
     }

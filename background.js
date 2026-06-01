@@ -2,6 +2,18 @@
 
 importScripts('context-menu-utils.js', 'pro-utils.js');
 
+function addChromeListener(label, event, handler) {
+  try {
+    if (!event || typeof event.addListener !== 'function') {
+      console.warn(`${label} is unavailable; related feature is disabled.`);
+      return;
+    }
+    event.addListener(handler);
+  } catch (error) {
+    console.warn(`Failed to register ${label}:`, error);
+  }
+}
+
 // AI Polish system prompt
 const SYSTEM_PROMPT = `你是一位专业的 AI 提示词工程师。你的任务是优化用户提供的提示词，使其更清晰、更有效、更容易被 AI 理解。
 
@@ -106,41 +118,53 @@ async function aiPolish(prompt, options) {
 }
 
 // Message handler
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'AI_POLISH') {
-    aiPolish(request.prompt, request.options).then(sendResponse);
-    return true;
+addChromeListener(
+  'chrome.runtime.onMessage',
+  chrome.runtime && chrome.runtime.onMessage,
+  (request, sender, sendResponse) => {
+    if (request.type === 'AI_POLISH') {
+      aiPolish(request.prompt, request.options).then(sendResponse);
+      return true;
+    }
+    if (request.type === 'WEBDAV_SYNC_NOW') {
+      syncNow(request.direction || 'both').then(sendResponse);
+      return true;
+    }
+    if (request.type === 'WEBDAV_TEST_CONNECTION') {
+      testWebdavConnection(request.config).then(sendResponse);
+      return true;
+    }
+    if (request.type === 'WEBDAV_GET_STATUS') {
+      getWebdavSyncState().then(sendResponse);
+      return true;
+    }
+    if (request.type === 'RECORD_PROMPT_USAGE') {
+      recordPromptUsageFromBackground(request.promptId, request.meta || {}).then(sendResponse);
+      return true;
+    }
   }
-  if (request.type === 'WEBDAV_SYNC_NOW') {
-    syncNow(request.direction || 'both').then(sendResponse);
-    return true;
-  }
-  if (request.type === 'WEBDAV_TEST_CONNECTION') {
-    testWebdavConnection(request.config).then(sendResponse);
-    return true;
-  }
-  if (request.type === 'WEBDAV_GET_STATUS') {
-    getWebdavSyncState().then(sendResponse);
-    return true;
-  }
-  if (request.type === 'RECORD_PROMPT_USAGE') {
-    recordPromptUsageFromBackground(request.promptId, request.meta || {}).then(sendResponse);
-    return true;
-  }
-});
+);
 
 // Update check and sync on startup and install
-chrome.runtime.onStartup.addListener(() => {
-  checkForUpdates();
-  refreshContextMenus();
-  syncNow('both').then(() => setupPeriodicPull());
-});
+addChromeListener(
+  'chrome.runtime.onStartup',
+  chrome.runtime && chrome.runtime.onStartup,
+  () => {
+    checkForUpdates();
+    refreshContextMenus();
+    syncNow('both').then(() => setupPeriodicPull());
+  }
+);
 
-chrome.runtime.onInstalled.addListener(() => {
-  checkForUpdates();
-  refreshContextMenus();
-  syncNow('both').then(() => setupPeriodicPull());
-});
+addChromeListener(
+  'chrome.runtime.onInstalled',
+  chrome.runtime && chrome.runtime.onInstalled,
+  () => {
+    checkForUpdates();
+    refreshContextMenus();
+    syncNow('both').then(() => setupPeriodicPull());
+  }
+);
 
 // ============================================================
 // WebDAV Sync Engine
@@ -443,23 +467,31 @@ async function testWebdavConnection(config) {
 }
 
 // Listen for data changes → trigger debounced push
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== 'local') return;
-  if (changes.prompts) {
-    refreshContextMenus();
+addChromeListener(
+  'chrome.storage.onChanged',
+  chrome.storage && chrome.storage.onChanged,
+  (changes, areaName) => {
+    if (areaName !== 'local') return;
+    if (changes.prompts) {
+      refreshContextMenus();
+    }
+    if (_syncInProgress) return;
+    const hasSyncRelevantChange = SYNC_KEYS.some(key => key in changes);
+    if (!hasSyncRelevantChange) return;
+    scheduleDebouncedPush();
   }
-  if (_syncInProgress) return;
-  const hasSyncRelevantChange = SYNC_KEYS.some(key => key in changes);
-  if (!hasSyncRelevantChange) return;
-  scheduleDebouncedPush();
-});
+);
 
 // Listen for alarms → periodic pull
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'webdav-periodic-pull') {
-    await syncNow('pull');
+addChromeListener(
+  'chrome.alarms.onAlarm',
+  chrome.alarms && chrome.alarms.onAlarm,
+  async (alarm) => {
+    if (alarm.name === 'webdav-periodic-pull') {
+      await syncNow('pull');
+    }
   }
-});
+);
 
 // Set up periodic pull alarm
 async function setupPeriodicPull() {
@@ -754,7 +786,7 @@ async function insertPromptFromMenu(info, tab) {
       url: tab.url || ''
     });
   } catch (error) {
-    console.log('插入提示词失败:', error);
+    console.warn('插入提示词失败:', error);
   }
 }
 
@@ -790,8 +822,10 @@ async function recordPromptUsageFromBackground(promptId, meta = {}) {
   return { success: true };
 }
 
-if (chrome.contextMenus?.onClicked?.addListener) {
-  chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+addChromeListener(
+  'chrome.contextMenus.onClicked',
+  chrome.contextMenus && chrome.contextMenus.onClicked,
+  async (info, tab) => {
     if (info.menuItemId === 'save-selection') {
       // Save selected text as a new prompt via options page
       const selectedText = info.selectionText || '';
@@ -801,17 +835,17 @@ if (chrome.contextMenus?.onClicked?.addListener) {
     if (getPromptIdFromMenuItem(info.menuItemId)) {
       await insertPromptFromMenu(info, tab);
     }
-  });
-} else {
-  console.warn('chrome.contextMenus.onClicked is unavailable; context menu actions are disabled.');
-}
+  }
+);
 
 // ============================================================
 // Keyboard Shortcuts
 // ============================================================
 
-if (chrome.commands?.onCommand?.addListener) {
-  chrome.commands.onCommand.addListener(async (command) => {
+addChromeListener(
+  'chrome.commands.onCommand',
+  chrome.commands && chrome.commands.onCommand,
+  async (command) => {
     if (command === 'save-selection') {
       // Get selected text from active tab
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -830,7 +864,5 @@ if (chrome.commands?.onCommand?.addListener) {
         chrome.runtime.openOptionsPage();
       }
     }
-  });
-} else {
-  console.warn('chrome.commands.onCommand is unavailable; keyboard shortcuts are disabled.');
-}
+  }
+);

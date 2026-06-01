@@ -49,25 +49,6 @@
     });
   }
 
-  function normalizeSlashCommand(value) {
-    if (!value) return '';
-    const command = value.trim().replace(/^\/+/, '').toLowerCase();
-    return command ? '/' + command.replace(/\s+/g, '-') : '';
-  }
-
-  function findSlashCommandTrigger(text, cursorPosition, prompts) {
-    const beforeCursor = text.slice(0, cursorPosition);
-    const match = beforeCursor.match(/(?:^|\s)(\/[\w-]{1,40})$/);
-    if (!match) return null;
-
-    const command = normalizeSlashCommand(match[1]);
-    const prompt = prompts.find(item => normalizeSlashCommand(item.slashCommand) === command);
-    if (!prompt) return null;
-
-    const commandStart = beforeCursor.length - match[1].length;
-    return { prompt, command, start: commandStart, end: cursorPosition };
-  }
-
   function summarizeUsage(events) {
     const byPrompt = {};
     const byHost = {};
@@ -86,8 +67,6 @@
 
   const api = {
     fillEnhancedVariables,
-    findSlashCommandTrigger,
-    normalizeSlashCommand,
     parseEnhancedVariables,
     summarizeUsage
   };
