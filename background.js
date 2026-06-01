@@ -1,6 +1,6 @@
 // background.js - Background script for AI polish and update checks
 
-importScripts('context-menu-utils.js', 'pro-utils.js');
+importScripts('context-menu-utils.js', 'pro-utils.js', 'ai-polish-utils.js');
 
 function addChromeListener(label, event, handler) {
   try {
@@ -13,24 +13,6 @@ function addChromeListener(label, event, handler) {
     console.warn(`Failed to register ${label}:`, error);
   }
 }
-
-// AI Polish system prompt
-const SYSTEM_PROMPT = `你是一位专业的 AI 提示词工程师。你的任务是优化用户提供的提示词，使其更清晰、更有效、更容易被 AI 理解。
-
-优化原则：
-1. 保持用户原始意图不变
-2. 增加结构化和可执行性
-3. 添加必要的上下文和约束
-4. 使用清晰的指令语言
-
-请根据用户选择的优化方向，对提示词进行优化。`;
-
-const OPTION_INSTRUCTIONS = {
-  '添加角色设定': '为提示词添加明确的角色设定，如"你是一位资深XX专家"',
-  '细化输出要求': '明确输出格式、字数、结构等具体要求',
-  '添加示例参考': '添加 1-2 个示例，帮助 AI 理解期望的输出',
-  '增加约束条件': '添加限制条件，如语言风格、禁止内容等'
-};
 
 // Version comparison (semver)
 function compareVersions(current, latest) {
@@ -72,24 +54,53 @@ async function checkForUpdates() {
 }
 
 // AI Polish handler
-async function aiPolish(prompt, options) {
-  // Get active API config from storage
-  const data = await chrome.storage.local.get(['apiConfigs', 'activeConfigId']);
-  const configs = data.apiConfigs || [];
-  const activeId = data.activeConfigId;
-  const config = configs.find(c => c.id === activeId) || configs[0] || null;
+const AI_POLISH_TIMEOUT_MS = 120000;
 
-  if (!config) {
-    return { success: false, error: '请先在设置中配置 API' };
+function createAiPolishFailure(errorCode, error) {
+  return { success: false, errorCode, error };
+}
+
+function classifyHttpAiError(status) {
+  if (status === 401 || status === 403) return 'unauthorized';
+  if (status === 429) return 'rate_limited';
+  return 'http_error';
+}
+
+async function aiPolish(prompt, options, mode) {
+  const selectedMode = normalizeAiPolishMode(mode);
+  const selectedOptions = Array.isArray(options) ? options : [];
+  console.info('AI polish request started', { mode: selectedMode, optionCount: selectedOptions.length });
+
+  let config = null;
+  try {
+    const data = await chrome.storage.local.get(['apiConfigs', 'activeConfigId']);
+    const configs = data.apiConfigs || [];
+    const activeId = data.activeConfigId;
+    config = configs.find(c => c.id === activeId) || configs[0] || null;
+  } catch (error) {
+    console.warn('AI polish request failed', { mode: selectedMode, errorCode: 'storage_error', message: error.message });
+    return createAiPolishFailure('storage_error', '读取 API 配置失败，请检查浏览器存储权限。');
   }
 
-  const optionInstructions = options.map(o => OPTION_INSTRUCTIONS[o]).filter(Boolean).join('\n');
+  if (!config || !config.apiUrl || !config.apiKey || !config.model) {
+    return createAiPolishFailure('missing_api_config', '请先在设置中配置 API 地址、Key 和模型。');
+  }
 
-  const systemMessage = SYSTEM_PROMPT + (optionInstructions ? '\n\n优化方向：\n' + optionInstructions : '');
-  const userMessage = `请优化以下提示词：\n\n${prompt}\n\n请输出优化后的提示词，保持结构清晰。`;
+  let endpoint = '';
+  try {
+    const apiBase = String(config.apiUrl).trim().replace(/\/+$/, '');
+    new URL(apiBase);
+    endpoint = `${apiBase}/chat/completions`;
+  } catch (error) {
+    console.warn('AI polish request failed', { mode: selectedMode, errorCode: 'invalid_api_url', message: error.message });
+    return createAiPolishFailure('invalid_api_url', 'API 地址格式不正确，请检查配置。');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), AI_POLISH_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${config.apiUrl}/chat/completions`, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -97,23 +108,59 @@ async function aiPolish(prompt, options) {
       },
       body: JSON.stringify({
         model: config.model,
-        messages: [
-          { role: 'system', content: systemMessage },
-          { role: 'user', content: userMessage }
-        ],
-        temperature: 0.7
-      })
+        messages: buildAiPolishMessages(prompt, selectedOptions, selectedMode),
+        temperature: 0.4,
+        stream: false
+      }),
+      signal: controller.signal
     });
 
-    const responseData = await response.json();
-
-    if (responseData.choices && responseData.choices[0]) {
-      return { success: true, result: responseData.choices[0].message.content };
-    } else {
-      return { success: false, error: responseData.error?.message || '请求失败' };
+    const responseText = await response.text();
+    let responseData = null;
+    if (responseText) {
+      try {
+        responseData = JSON.parse(responseText);
+      } catch (error) {
+        if (response.ok) {
+          console.warn('AI polish request failed', { mode: selectedMode, errorCode: 'invalid_response', message: error.message });
+          return createAiPolishFailure('invalid_response', 'AI 返回格式异常，请重试。');
+        }
+      }
     }
+
+    if (!response.ok) {
+      const errorCode = classifyHttpAiError(response.status);
+      const message = responseData && responseData.error && responseData.error.message
+        ? responseData.error.message
+        : `API 请求失败，状态码：${response.status}`;
+      console.warn('AI polish request failed', { mode: selectedMode, errorCode, status: response.status });
+      return createAiPolishFailure(errorCode, message);
+    }
+
+    const raw = responseData && responseData.choices && responseData.choices[0] && responseData.choices[0].message
+      ? responseData.choices[0].message.content
+      : '';
+
+    if (!raw) {
+      console.warn('AI polish request failed', { mode: selectedMode, errorCode: 'invalid_response', message: 'empty choices' });
+      return createAiPolishFailure(
+        'invalid_response',
+        (responseData && responseData.error && responseData.error.message) || 'AI 返回为空，请重试。'
+      );
+    }
+
+    const parsed = parseAiPolishResponse(raw);
+    console.info('AI polish request succeeded', { mode: selectedMode });
+    return { success: true, result: parsed, raw };
   } catch (error) {
-    return { success: false, error: error.message };
+    const errorCode = error && error.name === 'AbortError' ? 'timeout' : 'network_error';
+    const message = errorCode === 'timeout'
+      ? `AI 请求超过 ${Math.round(AI_POLISH_TIMEOUT_MS / 1000)} 秒未返回，请稍后重试。`
+      : (error && error.message) || '网络连接失败，请检查网络或 API 地址。';
+    console.warn('AI polish request failed', { mode: selectedMode, errorCode, message });
+    return createAiPolishFailure(errorCode, message);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -123,7 +170,7 @@ addChromeListener(
   chrome.runtime && chrome.runtime.onMessage,
   (request, sender, sendResponse) => {
     if (request.type === 'AI_POLISH') {
-      aiPolish(request.prompt, request.options).then(sendResponse);
+      aiPolish(request.prompt, request.options, request.mode).then(sendResponse);
       return true;
     }
     if (request.type === 'WEBDAV_SYNC_NOW') {

@@ -173,6 +173,16 @@
           <div class="ai-original" id="ai-original"></div>
         </div>
         <div class="form-group">
+          <label>优化模式</label>
+          <select id="ai-mode">
+            <option value="quick">快速润色</option>
+            <option value="structured">专业结构化</option>
+            <option value="variables">变量模板化</option>
+            <option value="format">严格输出格式</option>
+            <option value="diagnose">诊断问题</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label>优化方向（可多选）</label>
           <div class="ai-options">
             <label class="ai-option-card">
@@ -205,16 +215,41 @@
             </label>
           </div>
         </div>
-        <div class="form-group" id="ai-result-group" style="display: none;">
-          <label>AI 优化结果</label>
-          <div class="ai-result" id="ai-result"></div>
+        <div id="ai-loading" class="ai-loading" style="display: none;">
+          <span class="ai-spinner"></span>
+          <span>AI 正在分析，复杂提示词可能需要 1-2 分钟...</span>
+        </div>
+        <div id="ai-error" class="ai-error-panel" style="display: none;"></div>
+        <div id="ai-result-group" style="display: none;">
+          <div class="ai-result-section">
+            <h3>诊断</h3>
+            <div id="ai-diagnosis"></div>
+          </div>
+          <div class="ai-result-section">
+            <h3>优化结果</h3>
+            <pre id="ai-improved-prompt" class="ai-result-pre"></pre>
+          </div>
+          <div class="ai-result-section">
+            <h3>变量建议</h3>
+            <div id="ai-variable-suggestions"></div>
+          </div>
+          <div class="ai-result-section">
+            <h3>输出格式</h3>
+            <div id="ai-output-format"></div>
+          </div>
+          <div class="ai-result-section">
+            <h3>风险提示</h3>
+            <div id="ai-risk-notes"></div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="ai-modal-cancel">取消</button>
         <button class="btn btn-secondary" id="ai-regenerate" style="display: none;">重新生成</button>
+        <button class="btn btn-secondary" id="ai-copy" disabled>复制结果</button>
+        <button class="btn btn-secondary" id="ai-save-new" disabled>另存为新提示词</button>
         <button class="btn btn-primary" id="ai-generate">开始润色</button>
-        <button class="btn btn-primary" id="ai-use" style="display: none;">使用优化结果</button>
+        <button class="btn btn-primary" id="ai-use" disabled style="display: none;">使用优化结果</button>
       </div>
     </div>
   </div>
@@ -359,6 +394,7 @@
   </div>
 
   <script src="pro-utils.js"></script>
+  <script src="ai-polish-utils.js"></script>
   <script src="storage.js"></script>
   <script src="options.js"></script>
 </body>

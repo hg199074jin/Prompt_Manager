@@ -6,10 +6,33 @@ let currentCategoryId = null;
 let selectedPrompts = new Set();
 let currentEmoji = '📝';
 let currentAiPromptId = null;
-let aiResult = '';
+let aiStructuredResult = null;
+let isAiGenerating = false;
+const aiResultCache = new Map();
 let currentApiConfigId = null;
 let currentTags = [];
 let currentVersionPromptId = null;
+
+const AI_MODE_LABELS = {
+  quick: '快速润色',
+  structured: '专业结构化',
+  variables: '变量模板化',
+  format: '严格输出格式',
+  diagnose: '诊断问题'
+};
+
+const AI_ERROR_MESSAGES = {
+  missing_api_config: '请先配置 API 地址、API Key 和模型。',
+  invalid_api_url: 'API 地址格式不正确，请检查配置。',
+  unauthorized: '认证失败，请检查 API Key 是否正确。',
+  rate_limited: '请求过于频繁或额度受限，请稍后重试。',
+  timeout: 'AI 请求等待时间较长仍未返回，请稍后重试，或缩短提示词内容。',
+  http_error: 'API 服务返回错误，请检查配置或稍后重试。',
+  network_error: '网络连接失败，请检查网络或 API 地址。',
+  invalid_response: 'AI 返回格式异常，请重试。',
+  storage_error: '保存失败，请检查浏览器存储权限。',
+  unknown_error: '未知错误，请重试。'
+};
 
 // Common emojis for picker
 const COMMON_EMOJIS = [
@@ -128,6 +151,8 @@ function setupEventListeners() {
   document.getElementById('ai-generate').addEventListener('click', generateAiPolish);
   document.getElementById('ai-regenerate').addEventListener('click', generateAiPolish);
   document.getElementById('ai-use').addEventListener('click', useAiResult);
+  document.getElementById('ai-copy').addEventListener('click', copyAiResult);
+  document.getElementById('ai-save-new').addEventListener('click', saveAiResultAsNew);
 
   // API modal
   document.getElementById('api-modal-close').addEventListener('click', closeApiModal);
@@ -737,13 +762,18 @@ function filterEmojis() {
 
 async function openAiPolishModal(promptId) {
   currentAiPromptId = promptId;
+  aiStructuredResult = null;
+  isAiGenerating = false;
   const prompts = await getPrompts();
   const prompt = prompts.find(p => p.id === promptId);
 
   if (!prompt) return;
 
   document.getElementById('ai-original').textContent = prompt.content;
-  document.getElementById('ai-result-group').style.display = 'none';
+  document.getElementById('ai-mode').value = 'quick';
+  clearAiPolishResult();
+  renderAiPolishError(null);
+  setAiLoading(false);
   document.getElementById('ai-generate').style.display = 'inline-block';
   document.getElementById('ai-use').style.display = 'none';
   document.getElementById('ai-regenerate').style.display = 'none';
@@ -754,10 +784,76 @@ async function openAiPolishModal(promptId) {
 function closeAiModal() {
   document.getElementById('ai-modal').style.display = 'none';
   currentAiPromptId = null;
+  aiStructuredResult = null;
+  isAiGenerating = false;
 }
 
 async function generateAiPolish() {
+  if (isAiGenerating) return;
+
   const original = document.getElementById('ai-original').textContent;
+  const options = getAiPolishOptions();
+  const mode = document.getElementById('ai-mode').value;
+  const modeLabel = AI_MODE_LABELS[mode] || AI_MODE_LABELS.quick;
+  const cacheKey = buildAiPolishCacheKey(original, options, mode);
+
+  console.info('AI polish UI request', { mode, modeLabel, optionCount: options.length });
+  renderAiPolishError(null);
+
+  if (aiResultCache.has(cacheKey)) {
+    renderAiPolishResult(aiResultCache.get(cacheKey));
+    document.getElementById('ai-generate').style.display = 'none';
+    document.getElementById('ai-use').style.display = 'inline-block';
+    document.getElementById('ai-regenerate').style.display = 'inline-block';
+    updateAiActionButtons();
+    return;
+  }
+
+  isAiGenerating = true;
+  setAiLoading(true);
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'AI_POLISH',
+      prompt: original,
+      options,
+      mode
+    });
+
+    if (response.success) {
+      const result = typeof response.result === 'string'
+        ? parseAiPolishResponse(response.result)
+        : response.result;
+      aiResultCache.set(cacheKey, result);
+      renderAiPolishResult(result);
+      document.getElementById('ai-generate').style.display = 'none';
+      document.getElementById('ai-use').style.display = 'inline-block';
+      document.getElementById('ai-regenerate').style.display = 'inline-block';
+    } else {
+      renderAiPolishError(response);
+    }
+  } catch (error) {
+    renderAiPolishError({ errorCode: 'network_error', error: error.message });
+  } finally {
+    isAiGenerating = false;
+    setAiLoading(false);
+  }
+}
+
+async function useAiResult() {
+  if (!currentAiPromptId || !aiStructuredResult?.improvedPrompt) return;
+
+  try {
+    await updatePrompt(currentAiPromptId, { content: aiStructuredResult.improvedPrompt });
+    showToast('已使用优化结果');
+    closeAiModal();
+    await renderPrompts();
+  } catch (error) {
+    renderAiPolishError({ errorCode: 'storage_error', error: error.message });
+  }
+}
+
+function getAiPolishOptions() {
   const options = [];
 
   if (document.getElementById('ai-role').checked) options.push('添加角色设定');
@@ -765,42 +861,165 @@ async function generateAiPolish() {
   if (document.getElementById('ai-example').checked) options.push('添加示例参考');
   if (document.getElementById('ai-constraint').checked) options.push('增加约束条件');
 
-  const generateBtn = document.getElementById('ai-generate');
-  generateBtn.textContent = '生成中...';
-  generateBtn.disabled = true;
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: 'AI_POLISH',
-      prompt: original,
-      options
-    });
-
-    if (response.success) {
-      aiResult = response.result;
-      document.getElementById('ai-result').textContent = aiResult;
-      document.getElementById('ai-result-group').style.display = 'block';
-      document.getElementById('ai-generate').style.display = 'none';
-      document.getElementById('ai-use').style.display = 'inline-block';
-      document.getElementById('ai-regenerate').style.display = 'inline-block';
-    } else {
-      showToast('AI 润色失败：' + response.error);
-    }
-  } catch (error) {
-    showToast('AI 润色失败：请检查 API 配置');
-  }
-
-  generateBtn.textContent = '开始润色';
-  generateBtn.disabled = false;
+  return options;
 }
 
-async function useAiResult() {
-  if (!currentAiPromptId || !aiResult) return;
+function setAiLoading(isLoading) {
+  document.getElementById('ai-loading').style.display = isLoading ? 'flex' : 'none';
+  document.getElementById('ai-generate').disabled = isLoading;
+  document.getElementById('ai-regenerate').disabled = isLoading;
+  updateAiActionButtons();
+}
 
-  await updatePrompt(currentAiPromptId, { content: aiResult });
-  showToast('已使用优化结果');
-  closeAiModal();
-  await renderPrompts();
+function updateAiActionButtons() {
+  const hasResult = Boolean(aiStructuredResult && aiStructuredResult.improvedPrompt);
+  document.getElementById('ai-copy').disabled = isAiGenerating || !hasResult;
+  document.getElementById('ai-save-new').disabled = isAiGenerating || !hasResult;
+  document.getElementById('ai-use').disabled = isAiGenerating || !hasResult;
+}
+
+function clearAiPolishResult() {
+  aiStructuredResult = null;
+  document.getElementById('ai-result-group').style.display = 'none';
+  document.getElementById('ai-diagnosis').textContent = '';
+  document.getElementById('ai-improved-prompt').textContent = '';
+  document.getElementById('ai-variable-suggestions').textContent = '';
+  document.getElementById('ai-output-format').textContent = '';
+  document.getElementById('ai-risk-notes').textContent = '';
+  updateAiActionButtons();
+}
+
+function renderAiPolishError(response) {
+  const errorEl = document.getElementById('ai-error');
+  if (!response) {
+    errorEl.style.display = 'none';
+    errorEl.textContent = '';
+    return;
+  }
+
+  const errorCode = response.errorCode || 'unknown_error';
+  const message = AI_ERROR_MESSAGES[errorCode] || AI_ERROR_MESSAGES.unknown_error;
+  errorEl.textContent = response.error ? `${message}（${response.error}）` : message;
+  errorEl.style.display = 'block';
+}
+
+function renderTextList(container, items) {
+  container.textContent = '';
+  if (!items || items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'ai-result-empty';
+    empty.textContent = '暂无';
+    container.appendChild(empty);
+    return;
+  }
+
+  const list = document.createElement('ul');
+  list.className = 'ai-result-list';
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.textContent = item;
+    list.appendChild(li);
+  });
+  container.appendChild(list);
+}
+
+function renderAiPolishResult(result) {
+  aiStructuredResult = result || {
+    diagnosis: [],
+    improvedPrompt: '',
+    variableSuggestions: [],
+    outputFormat: '',
+    riskNotes: []
+  };
+
+  const diagnosisEl = document.getElementById('ai-diagnosis');
+  renderTextList(diagnosisEl, aiStructuredResult.diagnosis || []);
+  if (aiStructuredResult.parseWarning) {
+    const warning = document.createElement('div');
+    warning.className = 'ai-parse-warning';
+    warning.textContent = aiStructuredResult.parseWarning;
+    diagnosisEl.insertBefore(warning, diagnosisEl.firstChild);
+  }
+
+  document.getElementById('ai-improved-prompt').textContent = aiStructuredResult.improvedPrompt || '';
+  renderVariableSuggestions(aiStructuredResult.variableSuggestions || []);
+  document.getElementById('ai-output-format').textContent = aiStructuredResult.outputFormat || '暂无';
+  renderTextList(document.getElementById('ai-risk-notes'), aiStructuredResult.riskNotes || []);
+  document.getElementById('ai-result-group').style.display = 'block';
+  updateAiActionButtons();
+}
+
+function renderVariableSuggestions(suggestions) {
+  const container = document.getElementById('ai-variable-suggestions');
+  container.textContent = '';
+
+  if (!suggestions || suggestions.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'ai-result-empty';
+    empty.textContent = '暂无';
+    container.appendChild(empty);
+    return;
+  }
+
+  suggestions.forEach(variable => {
+    const card = document.createElement('div');
+    card.className = 'ai-variable-suggestion';
+
+    const header = document.createElement('div');
+    header.className = 'ai-variable-header';
+
+    const title = document.createElement('strong');
+    title.textContent = `{{${variable.name}}}`;
+    header.appendChild(title);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'btn btn-small btn-secondary';
+    copyBtn.textContent = '复制变量';
+    copyBtn.addEventListener('click', () => copyToClipboard(`{{${variable.name}}}`));
+    header.appendChild(copyBtn);
+
+    const meta = document.createElement('div');
+    meta.className = 'ai-variable-meta';
+    const optionText = variable.options && variable.options.length > 0
+      ? `；可选值：${variable.options.join('、')}`
+      : '';
+    const defaultText = variable.defaultValue ? `；默认值：${variable.defaultValue}` : '';
+    meta.textContent = `${variable.label || variable.name}；类型：${variable.type || 'text'}${optionText}${defaultText}`;
+
+    card.appendChild(header);
+    card.appendChild(meta);
+    container.appendChild(card);
+  });
+}
+
+async function copyAiResult() {
+  if (!aiStructuredResult?.improvedPrompt) return;
+  await copyToClipboard(aiStructuredResult.improvedPrompt);
+}
+
+async function saveAiResultAsNew() {
+  if (!currentAiPromptId || !aiStructuredResult?.improvedPrompt) return;
+
+  try {
+    const prompts = await getPrompts();
+    const original = prompts.find(prompt => prompt.id === currentAiPromptId);
+    if (!original) return;
+
+    const tags = Array.from(new Set([...(original.tags || []), 'AI优化']));
+    await addPrompt({
+      title: `${original.title || '未命名提示词'}（AI 优化）`,
+      content: aiStructuredResult.improvedPrompt,
+      categoryId: original.categoryId,
+      tags,
+      rating: original.rating || 0
+    });
+    showToast('已另存为新提示词');
+    await renderCategories();
+    await renderPrompts();
+  } catch (error) {
+    renderAiPolishError({ errorCode: 'storage_error', error: error.message });
+  }
 }
 
 // ========== Analytics ==========
