@@ -132,11 +132,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Update check and sync on startup and install
 chrome.runtime.onStartup.addListener(() => {
   checkForUpdates();
+  refreshContextMenus();
   syncNow('both').then(() => setupPeriodicPull());
 });
 
 chrome.runtime.onInstalled.addListener(() => {
   checkForUpdates();
+  refreshContextMenus();
   syncNow('both').then(() => setupPeriodicPull());
 });
 
@@ -443,6 +445,9 @@ async function testWebdavConnection(config) {
 // Listen for data changes → trigger debounced push
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;
+  if (changes.prompts) {
+    refreshContextMenus();
+  }
   if (_syncInProgress) return;
   const hasSyncRelevantChange = SYNC_KEYS.some(key => key in changes);
   if (!hasSyncRelevantChange) return;
@@ -560,6 +565,11 @@ async function createDynamicInsertPromptMenus() {
       dynamicInsertPromptMenuIds.add(itemId);
     }
   }
+}
+
+async function refreshContextMenus() {
+  await createBaseContextMenus();
+  await createDynamicInsertPromptMenus();
 }
 
 function getPromptIdFromMenuItem(menuItemId) {
@@ -769,18 +779,6 @@ async function recordPromptUsageFromBackground(promptId, meta = {}) {
 
   return { success: true };
 }
-
-chrome.runtime.onInstalled.addListener(() => {
-  createBaseContextMenus();
-});
-
-chrome.contextMenus.onShown.addListener((info) => {
-  if (!info.contexts.includes('editable')) return;
-
-  createDynamicInsertPromptMenus().then(() => {
-    chrome.contextMenus.refresh();
-  });
-});
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'save-selection') {
