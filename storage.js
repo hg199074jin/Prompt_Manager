@@ -209,6 +209,26 @@ async function setLanguage(lang) {
   await chrome.storage.local.set({ [STORAGE_KEYS.LANGUAGE]: lang });
 }
 
+// WebDAV Config (not in STORAGE_KEYS to avoid being overwritten by importData)
+async function getWebdavConfig() {
+  const data = await chrome.storage.local.get(['webdavConfig']);
+  return data.webdavConfig || null;
+}
+
+async function setWebdavConfig(config) {
+  await chrome.storage.local.set({ webdavConfig: config });
+}
+
+// WebDAV Sync State
+async function getWebdavSyncState() {
+  const data = await chrome.storage.local.get(['webdavSyncState']);
+  return data.webdavSyncState || { lastSyncTime: null, status: 'idle', lastError: null };
+}
+
+async function setWebdavSyncState(state) {
+  await chrome.storage.local.set({ webdavSyncState: state });
+}
+
 // Export/Import
 async function exportData() {
   const data = await chrome.storage.local.get([

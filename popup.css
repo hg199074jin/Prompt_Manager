@@ -246,3 +246,28 @@ body {
 .toast.show {
   opacity: 1;
 }
+
+/* Sync Status Indicator */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ccc;
+  cursor: help;
+}
+.sync-status-indicator.synced { background: #4caf50; }
+.sync-status-indicator.syncing { background: #ff9800; animation: sync-pulse 1s infinite; }
+.sync-status-indicator.error { background: #f44336; }
+.sync-status-indicator.not-configured { background: #9e9e9e; }
+
+@keyframes sync-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

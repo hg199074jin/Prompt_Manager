@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await renderCategories();
   await renderPrompts();
   setupEventListeners();
+  await updateSyncStatusIndicator();
 });
 
 // Setup event listeners
@@ -95,6 +96,15 @@ function setupEventListeners() {
   document.getElementById('api-delete').addEventListener('click', deleteApiConfigById);
   document.getElementById('api-test').addEventListener('click', testApiConnection);
   document.getElementById('api-key-toggle').addEventListener('click', toggleApiKeyVisibility);
+
+  // WebDAV sync modal
+  document.getElementById('sync-settings-btn').addEventListener('click', openWebdavModal);
+  document.getElementById('webdav-modal-close').addEventListener('click', closeWebdavModal);
+  document.getElementById('webdav-save').addEventListener('click', saveWebdavConfig);
+  document.getElementById('webdav-test').addEventListener('click', testWebdavConnectionFromUI);
+  document.getElementById('webdav-sync-now').addEventListener('click', triggerSyncNow);
+  document.getElementById('webdav-delete').addEventListener('click', clearWebdavConfig);
+  document.getElementById('webdav-password-toggle').addEventListener('click', toggleWebdavPasswordVisibility);
 
   // Sidebar resizer
   const resizer = document.getElementById('sidebar-resizer');
@@ -751,6 +761,223 @@ async function testApiConnection() {
 
 function toggleApiKeyVisibility() {
   const input = document.getElementById('api-key');
+  input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+// ========== WebDAV Sync ==========
+
+let webdavSyncStatusInterval = null;
+
+async function openWebdavModal() {
+  const modal = document.getElementById('webdav-modal');
+  const config = await getWebdavConfig();
+
+  if (config) {
+    document.getElementById('webdav-enabled').checked = config.enabled || false;
+    document.getElementById('webdav-server').value = config.serverUrl || '';
+    document.getElementById('webdav-username').value = config.username || '';
+    document.getElementById('webdav-password').value = config.password || '';
+    document.getElementById('webdav-path').value = config.remotePath || '/prompt-manager-sync.json';
+    document.getElementById('webdav-auto-sync').checked = config.autoSync !== false;
+    document.getElementById('webdav-interval').value = config.syncInterval || 120;
+  } else {
+    document.getElementById('webdav-enabled').checked = false;
+    document.getElementById('webdav-server').value = 'https://dav.jianguoyun.com/dav';
+    document.getElementById('webdav-username').value = '';
+    document.getElementById('webdav-password').value = '';
+    document.getElementById('webdav-path').value = '/prompt-manager-sync.json';
+    document.getElementById('webdav-auto-sync').checked = true;
+    document.getElementById('webdav-interval').value = 120;
+  }
+
+  await renderSyncStatus();
+  webdavSyncStatusInterval = setInterval(renderSyncStatus, 3000);
+  modal.style.display = 'flex';
+}
+
+function closeWebdavModal() {
+  document.getElementById('webdav-modal').style.display = 'none';
+  if (webdavSyncStatusInterval) {
+    clearInterval(webdavSyncStatusInterval);
+    webdavSyncStatusInterval = null;
+  }
+}
+
+async function saveWebdavConfig() {
+  const enabled = document.getElementById('webdav-enabled').checked;
+  const serverUrl = document.getElementById('webdav-server').value.trim();
+  const username = document.getElementById('webdav-username').value.trim();
+  const password = document.getElementById('webdav-password').value;
+  const remotePath = document.getElementById('webdav-path').value.trim() || '/prompt-manager-sync.json';
+  const autoSync = document.getElementById('webdav-auto-sync').checked;
+  const syncInterval = parseInt(document.getElementById('webdav-interval').value) || 120;
+
+  if (enabled && (!serverUrl || !username || !password)) {
+    showToast('启用同步时需要填写服务器地址、用户名和密码');
+    return;
+  }
+
+  const config = {
+    serverUrl,
+    username,
+    password,
+    remotePath,
+    enabled,
+    autoSync,
+    syncInterval: Math.max(5, Math.min(1440, syncInterval))
+  };
+
+  await setWebdavConfig(config);
+  showToast('同步配置已保存');
+  await updateSyncStatusIndicator();
+}
+
+async function testWebdavConnectionFromUI() {
+  const serverUrl = document.getElementById('webdav-server').value.trim();
+  const username = document.getElementById('webdav-username').value.trim();
+  const password = document.getElementById('webdav-password').value;
+  const remotePath = document.getElementById('webdav-path').value.trim() || '/prompt-manager-sync.json';
+
+  if (!serverUrl || !username || !password) {
+    showToast('请填写服务器地址、用户名和密码');
+    return;
+  }
+
+  const testBtn = document.getElementById('webdav-test');
+  testBtn.textContent = '测试中...';
+  testBtn.disabled = true;
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: 'WEBDAV_TEST_CONNECTION',
+      config: { serverUrl, username, password, remotePath }
+    });
+
+    if (result.success) {
+      showToast('连接成功');
+    } else {
+      showToast('连接失败：' + result.error);
+    }
+  } catch (error) {
+    showToast('测试失败：' + error.message);
+  }
+
+  testBtn.textContent = '测试连接';
+  testBtn.disabled = false;
+}
+
+async function triggerSyncNow() {
+  const syncBtn = document.getElementById('webdav-sync-now');
+  syncBtn.textContent = '同步中...';
+  syncBtn.disabled = true;
+
+  try {
+    // Always save current form values before syncing
+    const enabled = document.getElementById('webdav-enabled').checked;
+    const serverUrl = document.getElementById('webdav-server').value.trim();
+    const username = document.getElementById('webdav-username').value.trim();
+    const password = document.getElementById('webdav-password').value;
+    const remotePath = document.getElementById('webdav-path').value.trim() || '/prompt-manager-sync.json';
+    const autoSync = document.getElementById('webdav-auto-sync').checked;
+    const syncInterval = parseInt(document.getElementById('webdav-interval').value) || 120;
+
+    if (!enabled || !serverUrl || !username || !password) {
+      showToast('请先填写配置并勾选"启用同步"');
+      syncBtn.textContent = '立即同步';
+      syncBtn.disabled = false;
+      return;
+    }
+
+    const config = {
+      serverUrl, username, password, remotePath,
+      enabled: true, autoSync,
+      syncInterval: Math.max(5, Math.min(1440, syncInterval))
+    };
+    await setWebdavConfig(config);
+
+    const result = await chrome.runtime.sendMessage({
+      type: 'WEBDAV_SYNC_NOW',
+      direction: 'both'
+    });
+
+    if (result.success) {
+      showToast('同步完成');
+      await renderCategories();
+      await renderPrompts();
+    } else {
+      showToast('同步失败：' + result.error);
+    }
+  } catch (error) {
+    showToast('同步失败：' + error.message);
+  }
+
+  syncBtn.textContent = '立即同步';
+  syncBtn.disabled = false;
+  await renderSyncStatus();
+  await updateSyncStatusIndicator();
+}
+
+async function clearWebdavConfig() {
+  if (!confirm('确定要清除同步配置吗？\n这不会删除已同步到云端的数据。')) return;
+
+  await setWebdavConfig(null);
+  await setWebdavSyncState({ lastSyncTime: null, status: 'idle', lastError: null });
+  showToast('同步配置已清除');
+  closeWebdavModal();
+  await updateSyncStatusIndicator();
+}
+
+async function renderSyncStatus() {
+  const state = await getWebdavSyncState();
+
+  const lastTimeEl = document.getElementById('sync-last-time');
+  const statusTextEl = document.getElementById('sync-status-text');
+  const errorRow = document.getElementById('sync-error-row');
+  const errorText = document.getElementById('sync-error-text');
+
+  lastTimeEl.textContent = state.lastSyncTime
+    ? new Date(state.lastSyncTime).toLocaleString()
+    : '从未';
+
+  const statusMap = { idle: '空闲', syncing: '同步中...', error: '出错' };
+  statusTextEl.textContent = statusMap[state.status] || '空闲';
+
+  if (state.lastError) {
+    errorRow.style.display = 'flex';
+    errorText.textContent = state.lastError;
+  } else {
+    errorRow.style.display = 'none';
+  }
+}
+
+async function updateSyncStatusIndicator() {
+  const indicator = document.getElementById('sync-status-indicator');
+  const config = await getWebdavConfig();
+
+  if (!config || !config.enabled) {
+    indicator.className = 'sync-status-indicator not-configured';
+    indicator.title = '同步未配置';
+    return;
+  }
+
+  const state = await getWebdavSyncState();
+
+  if (state.status === 'syncing') {
+    indicator.className = 'sync-status-indicator syncing';
+    indicator.title = '同步中...';
+  } else if (state.status === 'error') {
+    indicator.className = 'sync-status-indicator error';
+    indicator.title = '同步出错: ' + (state.lastError || '');
+  } else {
+    indicator.className = 'sync-status-indicator synced';
+    indicator.title = state.lastSyncTime
+      ? '上次同步: ' + new Date(state.lastSyncTime).toLocaleString()
+      : '已启用，尚未同步';
+  }
+}
+
+function toggleWebdavPasswordVisibility() {
+  const input = document.getElementById('webdav-password');
   input.type = input.type === 'password' ? 'text' : 'password';
 }
 

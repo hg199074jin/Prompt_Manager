@@ -520,3 +520,74 @@ body {
 .toast.show {
   opacity: 1;
 }
+
+/* Sync Status Indicator (header) */
+.sync-status-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ccc;
+  vertical-align: middle;
+  cursor: help;
+  margin-left: 4px;
+}
+.sync-status-indicator.synced { background: #4caf50; }
+.sync-status-indicator.syncing { background: #ff9800; animation: sync-pulse 1s infinite; }
+.sync-status-indicator.error { background: #f44336; }
+.sync-status-indicator.not-configured { background: #9e9e9e; }
+
+@keyframes sync-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Checkbox label */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+}
+
+/* Sync Status Panel */
+.sync-status-panel {
+  background: #f8f9fa;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 12px;
+}
+
+.sync-status-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.sync-status-label {
+  color: #888;
+  font-weight: 500;
+}
+
+.sync-error {
+  color: #d32f2f;
+  font-size: 12px;
+}
+
+/* Sync Tip */
+.sync-tip {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #795548;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}

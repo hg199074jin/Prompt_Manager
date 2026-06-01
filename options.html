@@ -16,6 +16,8 @@
     <div class="header-right">
       <button id="lang-btn" class="lang-btn">🇨🇳 中文</button>
       <button id="api-settings-btn" class="btn btn-header">⚙️ API 配置</button>
+      <button id="sync-settings-btn" class="btn btn-header">☁️ 同步设置</button>
+      <span id="sync-status-indicator" class="sync-status-indicator not-configured" title="同步状态"></span>
       <button id="import-btn" class="btn btn-header">📥 导入</button>
       <button id="export-btn" class="btn btn-header">📤 导出全部</button>
     </div>
@@ -238,6 +240,74 @@
 
   <!-- Toast notification -->
   <div id="toast" class="toast"></div>
+
+  <!-- Modal: WebDAV Sync Config -->
+  <div id="webdav-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>☁️ WebDAV 同步设置</h2>
+        <button class="modal-close" id="webdav-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="webdav-enabled"> 启用同步
+          </label>
+        </div>
+        <div class="form-group">
+          <label>服务器地址</label>
+          <input type="text" id="webdav-server" placeholder="https://dav.jianguoyun.com/dav">
+        </div>
+        <div class="form-group">
+          <label>用户名</label>
+          <input type="text" id="webdav-username" placeholder="your@email.com">
+        </div>
+        <div class="form-group">
+          <label>应用密码（非登录密码）</label>
+          <div class="api-key-input">
+            <input type="password" id="webdav-password" placeholder="坚果云安全选项中生成的应用密码">
+            <button class="btn btn-small btn-secondary" id="webdav-password-toggle">👁️</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>远程文件路径</label>
+          <input type="text" id="webdav-path" placeholder="/prompt-manager-sync.json">
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="webdav-auto-sync" checked> 数据变更时自动同步
+          </label>
+        </div>
+        <div class="form-group">
+          <label>定时拉取间隔（分钟）</label>
+          <input type="number" id="webdav-interval" min="5" max="1440" value="120">
+        </div>
+        <div class="sync-tip">
+          💡 坚果云同步步骤：1) 在坚果云客户端（Win/Mac）新建一个同步文件夹（如 Prompt_Extension）；2) 在坚果云网页端"安全选项"中生成应用密码；3) 服务器地址填 <code>https://dav.jianguoyun.com/dav</code>（不含用户名）；4) 远程文件路径填 <code>/你的文件夹名/prompt-manager-sync.json</code>（如 <code>/Prompt_Extension/prompt-manager-sync.json</code>）。免费账户每月 1GB 上传流量，提示词文件极小，完全够用。
+        </div>
+        <div class="sync-status-panel" id="sync-status-panel">
+          <div class="sync-status-row">
+            <span class="sync-status-label">上次同步:</span>
+            <span id="sync-last-time">从未</span>
+          </div>
+          <div class="sync-status-row">
+            <span class="sync-status-label">状态:</span>
+            <span id="sync-status-text">空闲</span>
+          </div>
+          <div class="sync-status-row" id="sync-error-row" style="display: none;">
+            <span class="sync-status-label">错误:</span>
+            <span id="sync-error-text" class="sync-error"></span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="webdav-delete">清除配置</button>
+        <button class="btn btn-secondary" id="webdav-test">测试连接</button>
+        <button class="btn btn-secondary" id="webdav-sync-now">立即同步</button>
+        <button class="btn btn-primary" id="webdav-save">保存</button>
+      </div>
+    </div>
+  </div>
 
   <script src="storage.js"></script>
   <script src="options.js"></script>

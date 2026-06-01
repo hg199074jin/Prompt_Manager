@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await renderCategories();
   await renderPrompts();
   await checkForUpdates();
+  await updateSyncStatusIndicator();
   setupEventListeners();
 });
 
@@ -183,6 +184,35 @@ async function checkForUpdates() {
     }
   } catch (error) {
     console.log('检查更新失败:', error);
+  }
+}
+
+// Update sync status indicator
+async function updateSyncStatusIndicator() {
+  const indicator = document.getElementById('sync-status-indicator');
+  const configData = await chrome.storage.local.get(['webdavConfig']);
+  const config = configData.webdavConfig;
+
+  if (!config || !config.enabled) {
+    indicator.style.display = 'none';
+    return;
+  }
+
+  indicator.style.display = 'inline-block';
+  const stateData = await chrome.storage.local.get(['webdavSyncState']);
+  const state = stateData.webdavSyncState || { status: 'idle' };
+
+  if (state.status === 'syncing') {
+    indicator.className = 'sync-status-indicator syncing';
+    indicator.title = '同步中...';
+  } else if (state.status === 'error') {
+    indicator.className = 'sync-status-indicator error';
+    indicator.title = '同步出错';
+  } else {
+    indicator.className = 'sync-status-indicator synced';
+    indicator.title = state.lastSyncTime
+      ? '上次同步: ' + new Date(state.lastSyncTime).toLocaleString()
+      : '已启用';
   }
 }
 
