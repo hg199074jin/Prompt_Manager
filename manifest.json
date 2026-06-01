@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompt Manager",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "description": "AI 提示词管理器，快速复制、编辑、优化提示词",
   "default_locale": "zh",
   "permissions": ["storage", "clipboardWrite", "alarms", "contextMenus", "scripting", "activeTab"],
