@@ -1,5 +1,7 @@
 // background.js - Background script for AI polish and update checks
 
+importScripts('context-menu-utils.js');
+
 // AI Polish system prompt
 const SYSTEM_PROMPT = `你是一位专业的 AI 提示词工程师。你的任务是优化用户提供的提示词，使其更清晰、更有效、更容易被 AI 理解。
 
@@ -36,7 +38,7 @@ function compareVersions(current, latest) {
 async function checkForUpdates() {
   try {
     const currentVersion = chrome.runtime.getManifest().version;
-    const response = await fetch('https://api.github.com/repos/anthropics/prompt-manager/releases/latest');
+    const response = await fetch('https://api.github.com/repos/hg199074jin/Prompt_Manager/releases/latest');
 
     if (!response.ok) return;
 
@@ -459,16 +461,258 @@ async function setupPeriodicPull() {
 // Context Menu
 // ============================================================
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
+const INSERT_PROMPT_MENU_ID = 'insert-prompt';
+const INSERT_PROMPT_MENU_PREFIX = 'insert-prompt-item:';
+const INSERT_PROMPT_MENU_GROUPS = [
+  { id: 'insert-prompt-favorites', title: '收藏提示词', key: 'favorites', emptyTitle: '暂无收藏提示词' },
+  { id: 'insert-prompt-frequent', title: '常用提示词', key: 'frequent', emptyTitle: '暂无常用提示词' },
+  { id: 'insert-prompt-recent', title: '最近创建', key: 'recent', emptyTitle: '暂无提示词' }
+];
+let dynamicInsertPromptMenuIds = new Set();
+
+function createContextMenu(options) {
+  return new Promise(resolve => {
+    chrome.contextMenus.create(options, () => resolve(chrome.runtime.lastError || null));
+  });
+}
+
+function removeContextMenu(id) {
+  return new Promise(resolve => {
+    chrome.contextMenus.remove(id, () => resolve(chrome.runtime.lastError || null));
+  });
+}
+
+function truncateMenuTitle(title) {
+  const normalized = title.replace(/\s+/g, ' ').trim();
+  return normalized.length > 32 ? normalized.slice(0, 31) + '…' : normalized;
+}
+
+async function createBaseContextMenus() {
+  await new Promise(resolve => chrome.contextMenus.removeAll(resolve));
+  await createContextMenu({
     id: 'save-selection',
     title: '保存为提示词',
     contexts: ['selection']
   });
-  chrome.contextMenus.create({
-    id: 'insert-prompt',
+  await createContextMenu({
+    id: INSERT_PROMPT_MENU_ID,
     title: '插入提示词',
     contexts: ['editable']
+  });
+}
+
+async function clearDynamicInsertPromptMenus() {
+  const knownGroupIds = INSERT_PROMPT_MENU_GROUPS.map(group => group.id);
+  const ids = [...new Set([...Array.from(dynamicInsertPromptMenuIds), ...knownGroupIds])].reverse();
+  dynamicInsertPromptMenuIds.clear();
+
+  for (const id of ids) {
+    await removeContextMenu(id);
+  }
+}
+
+async function createDynamicInsertPromptMenus() {
+  await clearDynamicInsertPromptMenus();
+
+  const data = await chrome.storage.local.get(['prompts']);
+  const prompts = data.prompts || [];
+  const groups = buildPromptMenuGroups(prompts, 8);
+
+  for (const group of INSERT_PROMPT_MENU_GROUPS) {
+    await createContextMenu({
+      id: group.id,
+      parentId: INSERT_PROMPT_MENU_ID,
+      title: group.title,
+      contexts: ['editable']
+    });
+    dynamicInsertPromptMenuIds.add(group.id);
+
+    const groupPrompts = groups[group.key] || [];
+    if (groupPrompts.length === 0) {
+      const emptyId = `${group.id}:empty`;
+      await createContextMenu({
+        id: emptyId,
+        parentId: group.id,
+        title: group.emptyTitle,
+        contexts: ['editable'],
+        enabled: false
+      });
+      dynamicInsertPromptMenuIds.add(emptyId);
+      continue;
+    }
+
+    for (const prompt of groupPrompts) {
+      const itemId = `${INSERT_PROMPT_MENU_PREFIX}${group.key}:${prompt.id}`;
+      await createContextMenu({
+        id: itemId,
+        parentId: group.id,
+        title: truncateMenuTitle(normalizePromptTitle(prompt)),
+        contexts: ['editable']
+      });
+      dynamicInsertPromptMenuIds.add(itemId);
+    }
+  }
+}
+
+function getPromptIdFromMenuItem(menuItemId) {
+  if (typeof menuItemId !== 'string' || !menuItemId.startsWith(INSERT_PROMPT_MENU_PREFIX)) {
+    return null;
+  }
+  return menuItemId.slice(INSERT_PROMPT_MENU_PREFIX.length).replace(/^[^:]+:/, '');
+}
+
+function insertPromptIntoActiveEditable(rawContent) {
+  const TEMPLATE_VARIABLE_PATTERN = /\{\{([^}]+)\}\}/g;
+
+  function extractVariables(content) {
+    const variables = [];
+    const seen = new Set();
+    let match;
+    while ((match = TEMPLATE_VARIABLE_PATTERN.exec(content)) !== null) {
+      const name = match[1].trim();
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        variables.push(name);
+      }
+    }
+    TEMPLATE_VARIABLE_PATTERN.lastIndex = 0;
+    return variables;
+  }
+
+  function fillVariables(content, values) {
+    return content.replace(TEMPLATE_VARIABLE_PATTERN, (placeholder, rawName) => {
+      const value = values[rawName.trim()];
+      return value ? value : placeholder;
+    });
+  }
+
+  function getDeepActiveElement() {
+    let active = document.activeElement;
+    while (active && active.shadowRoot && active.shadowRoot.activeElement) {
+      active = active.shadowRoot.activeElement;
+    }
+    return active;
+  }
+
+  function dispatchEditEvents(element) {
+    let inputEvent;
+    try {
+      inputEvent = new InputEvent('input', { bubbles: true, inputType: 'insertText', data: null });
+    } catch (error) {
+      inputEvent = new Event('input', { bubbles: true });
+    }
+    element.dispatchEvent(inputEvent);
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  const values = {};
+  for (const variable of extractVariables(rawContent)) {
+    const value = window.prompt(`请输入 ${variable}`, '');
+    if (value === null) {
+      return { success: false, canceled: true };
+    }
+    values[variable] = value.trim();
+  }
+
+  const content = fillVariables(rawContent, values);
+  const active = getDeepActiveElement();
+  if (!active) {
+    return { success: false, error: '未找到当前输入框' };
+  }
+
+  const tagName = active.tagName ? active.tagName.toLowerCase() : '';
+  const isTextInput = tagName === 'textarea' || (
+    tagName === 'input' &&
+    !['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'].includes(active.type)
+  );
+
+  if (isTextInput) {
+    const start = Number.isInteger(active.selectionStart) ? active.selectionStart : active.value.length;
+    const end = Number.isInteger(active.selectionEnd) ? active.selectionEnd : start;
+    active.focus();
+
+    if (typeof active.setRangeText === 'function') {
+      active.setRangeText(content, start, end, 'end');
+    } else {
+      active.value = active.value.slice(0, start) + content + active.value.slice(end);
+      const cursor = start + content.length;
+      active.selectionStart = cursor;
+      active.selectionEnd = cursor;
+    }
+
+    dispatchEditEvents(active);
+    return { success: true };
+  }
+
+  if (active.isContentEditable) {
+    active.focus();
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      active.appendChild(document.createTextNode(content));
+      dispatchEditEvents(active);
+      return { success: true };
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!active.contains(range.commonAncestorContainer)) {
+      active.appendChild(document.createTextNode(content));
+    } else {
+      range.deleteContents();
+      const textNode = document.createTextNode(content);
+      range.insertNode(textNode);
+      range.setStartAfter(textNode);
+      range.setEndAfter(textNode);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    dispatchEditEvents(active);
+    return { success: true };
+  }
+
+  return { success: false, error: '当前元素不支持插入文本' };
+}
+
+async function insertPromptFromMenu(info, tab) {
+  const promptId = getPromptIdFromMenuItem(info.menuItemId);
+  if (!promptId || !tab?.id) return;
+
+  const data = await chrome.storage.local.get(['prompts']);
+  const prompts = data.prompts || [];
+  const prompt = prompts.find(item => item.id === promptId);
+  if (!prompt) return;
+
+  const target = { tabId: tab.id };
+  if (Number.isInteger(info.frameId) && info.frameId >= 0) {
+    target.frameIds = [info.frameId];
+  }
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target,
+      func: insertPromptIntoActiveEditable,
+      args: [prompt.content || '']
+    });
+    const result = results?.[0]?.result;
+    if (!result?.success) return;
+
+    prompt.usageCount = (prompt.usageCount || 0) + 1;
+    prompt.updatedAt = Date.now();
+    await chrome.storage.local.set({ prompts });
+  } catch (error) {
+    console.log('插入提示词失败:', error);
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  createBaseContextMenus();
+});
+
+chrome.contextMenus.onShown.addListener((info) => {
+  if (!info.contexts.includes('editable')) return;
+
+  createDynamicInsertPromptMenus().then(() => {
+    chrome.contextMenus.refresh();
   });
 });
 
@@ -479,10 +723,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     await chrome.storage.local.set({ _pendingSaveText: selectedText });
     chrome.runtime.openOptionsPage();
   }
-  if (info.menuItemId === 'insert-prompt') {
-    // Open popup for prompt selection (user clicks to insert)
-    // We can't directly inject from background, so open the popup
-    // The popup will handle insertion via message passing
+  if (getPromptIdFromMenuItem(info.menuItemId)) {
+    await insertPromptFromMenu(info, tab);
   }
 });
 
