@@ -88,6 +88,16 @@ async function renderPrompts() {
     );
   }
 
+  // Sort by usage frequency, fallback to createdAt
+  filtered.sort((a, b) => {
+    const aFreq = a.usageCount || 0;
+    const bFreq = b.usageCount || 0;
+    if (aFreq > 0 && bFreq > 0) return bFreq - aFreq;
+    if (aFreq > 0 && bFreq === 0) return -1;
+    if (aFreq === 0 && bFreq > 0) return 1;
+    return b.createdAt - a.createdAt;
+  });
+
   listContainer.innerHTML = '';
 
   if (filtered.length === 0) {
@@ -110,7 +120,10 @@ async function renderPrompts() {
       <div class="prompt-content">${escapeHtml(prompt.content)}</div>
     `;
 
-    item.addEventListener('click', () => copyToClipboard(prompt.content));
+    item.addEventListener('click', () => {
+      copyToClipboard(prompt.content);
+      incrementUsageCount(prompt.id);
+    });
 
     item.addEventListener('dblclick', () => {
       chrome.runtime.openOptionsPage();
@@ -118,6 +131,17 @@ async function renderPrompts() {
 
     listContainer.appendChild(item);
   });
+}
+
+// Increment usage count
+async function incrementUsageCount(promptId) {
+  const prompts = await getPrompts();
+  const prompt = prompts.find(p => p.id === promptId);
+  if (prompt) {
+    prompt.usageCount = (prompt.usageCount || 0) + 1;
+    prompt.updatedAt = Date.now();
+    await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: prompts });
+  }
 }
 
 // Copy to clipboard

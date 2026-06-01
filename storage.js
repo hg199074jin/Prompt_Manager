@@ -10,28 +10,28 @@ const STORAGE_KEYS = {
 
 // Default categories
 const DEFAULT_CATEGORIES = [
-  { id: 'cat_writing', name: '写作', nameEn: 'Writing', emoji: '📝', isPreset: true },
-  { id: 'cat_coding', name: '编程', nameEn: 'Coding', emoji: '💻', isPreset: true },
-  { id: 'cat_translation', name: '翻译', nameEn: 'Translation', emoji: '🌐', isPreset: true },
-  { id: 'cat_analysis', name: '分析', nameEn: 'Analysis', emoji: '📊', isPreset: true },
-  { id: 'cat_creative', name: '创意', nameEn: 'Creative', emoji: '🎨', isPreset: true },
-  { id: 'cat_email', name: '邮件', nameEn: 'Email', emoji: '📧', isPreset: true },
-  { id: 'cat_learning', name: '学习', nameEn: 'Learning', emoji: '📚', isPreset: true },
-  { id: 'cat_work', name: '工作', nameEn: 'Work', emoji: '💼', isPreset: true },
-  { id: 'cat_marketing', name: '营销', nameEn: 'Marketing', emoji: '🎯', isPreset: true },
-  { id: 'cat_research', name: '研究', nameEn: 'Research', emoji: '🔍', isPreset: true },
-  { id: 'cat_brainstorming', name: '头脑风暴', nameEn: 'Brainstorming', emoji: '💡', isPreset: true },
-  { id: 'cat_reading', name: '阅读', nameEn: 'Reading', emoji: '📖', isPreset: true },
-  { id: 'cat_roleplay', name: '角色扮演', nameEn: 'Roleplay', emoji: '🎭', isPreset: true },
-  { id: 'cat_summary', name: '总结', nameEn: 'Summary', emoji: '📝', isPreset: true },
-  { id: 'cat_conversation', name: '对话', nameEn: 'Conversation', emoji: '🗣️', isPreset: true },
-  { id: 'cat_social', name: '社交媒体', nameEn: 'Social Media', emoji: '📱', isPreset: true },
-  { id: 'cat_gaming', name: '游戏', nameEn: 'Gaming', emoji: '🎮', isPreset: true },
-  { id: 'cat_life', name: '生活', nameEn: 'Life', emoji: '🍳', isPreset: true },
-  { id: 'cat_fitness', name: '健身', nameEn: 'Fitness', emoji: '💪', isPreset: true },
-  { id: 'cat_music', name: '音乐', nameEn: 'Music', emoji: '🎵', isPreset: true },
-  { id: 'cat_photography', name: '摄影', nameEn: 'Photography', emoji: '📷', isPreset: true },
-  { id: 'cat_other', name: '其他', nameEn: 'Other', emoji: '🌟', isPreset: true }
+  { id: 'cat_writing', name: '写作', nameEn: 'Writing', emoji: '📝', isPreset: true, sortOrder: 0 },
+  { id: 'cat_coding', name: '编程', nameEn: 'Coding', emoji: '💻', isPreset: true, sortOrder: 1 },
+  { id: 'cat_translation', name: '翻译', nameEn: 'Translation', emoji: '🌐', isPreset: true, sortOrder: 2 },
+  { id: 'cat_analysis', name: '分析', nameEn: 'Analysis', emoji: '📊', isPreset: true, sortOrder: 3 },
+  { id: 'cat_creative', name: '创意', nameEn: 'Creative', emoji: '🎨', isPreset: true, sortOrder: 4 },
+  { id: 'cat_email', name: '邮件', nameEn: 'Email', emoji: '📧', isPreset: true, sortOrder: 5 },
+  { id: 'cat_learning', name: '学习', nameEn: 'Learning', emoji: '📚', isPreset: true, sortOrder: 6 },
+  { id: 'cat_work', name: '工作', nameEn: 'Work', emoji: '💼', isPreset: true, sortOrder: 7 },
+  { id: 'cat_marketing', name: '营销', nameEn: 'Marketing', emoji: '🎯', isPreset: true, sortOrder: 8 },
+  { id: 'cat_research', name: '研究', nameEn: 'Research', emoji: '🔍', isPreset: true, sortOrder: 9 },
+  { id: 'cat_brainstorming', name: '头脑风暴', nameEn: 'Brainstorming', emoji: '💡', isPreset: true, sortOrder: 10 },
+  { id: 'cat_reading', name: '阅读', nameEn: 'Reading', emoji: '📖', isPreset: true, sortOrder: 11 },
+  { id: 'cat_roleplay', name: '角色扮演', nameEn: 'Roleplay', emoji: '🎭', isPreset: true, sortOrder: 12 },
+  { id: 'cat_summary', name: '总结', nameEn: 'Summary', emoji: '📝', isPreset: true, sortOrder: 13 },
+  { id: 'cat_conversation', name: '对话', nameEn: 'Conversation', emoji: '🗣️', isPreset: true, sortOrder: 14 },
+  { id: 'cat_social', name: '社交媒体', nameEn: 'Social Media', emoji: '📱', isPreset: true, sortOrder: 15 },
+  { id: 'cat_gaming', name: '游戏', nameEn: 'Gaming', emoji: '🎮', isPreset: true, sortOrder: 16 },
+  { id: 'cat_life', name: '生活', nameEn: 'Life', emoji: '🍳', isPreset: true, sortOrder: 17 },
+  { id: 'cat_fitness', name: '健身', nameEn: 'Fitness', emoji: '💪', isPreset: true, sortOrder: 18 },
+  { id: 'cat_music', name: '音乐', nameEn: 'Music', emoji: '🎵', isPreset: true, sortOrder: 19 },
+  { id: 'cat_photography', name: '摄影', nameEn: 'Photography', emoji: '📷', isPreset: true, sortOrder: 20 },
+  { id: 'cat_other', name: '其他', nameEn: 'Other', emoji: '🌟', isPreset: true, sortOrder: 21 }
 ];
 
 // Initialize storage with defaults
@@ -60,6 +60,7 @@ async function addPrompt(prompt) {
   prompt.id = 'p_' + Date.now();
   prompt.createdAt = Date.now();
   prompt.updatedAt = Date.now();
+  prompt.usageCount = prompt.usageCount || 0;
   prompts.unshift(prompt);
   await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: prompts });
   return prompt;
@@ -91,7 +92,8 @@ async function deletePrompts(ids) {
 // Category CRUD
 async function getCategories() {
   const data = await chrome.storage.local.get([STORAGE_KEYS.CATEGORIES]);
-  return data[STORAGE_KEYS.CATEGORIES] || DEFAULT_CATEGORIES;
+  const categories = data[STORAGE_KEYS.CATEGORIES] || DEFAULT_CATEGORIES;
+  return categories.sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
 }
 
 async function addCategory(category) {
@@ -131,6 +133,18 @@ async function deleteCategory(id) {
       return p;
     });
     await chrome.storage.local.set({ [STORAGE_KEYS.PROMPTS]: updated });
+  }
+}
+
+async function swapCategoryOrder(id1, id2) {
+  const categories = await getCategories();
+  const cat1 = categories.find(c => c.id === id1);
+  const cat2 = categories.find(c => c.id === id2);
+  if (cat1 && cat2) {
+    const temp = cat1.sortOrder;
+    cat1.sortOrder = cat2.sortOrder;
+    cat2.sortOrder = temp;
+    await chrome.storage.local.set({ [STORAGE_KEYS.CATEGORIES]: categories });
   }
 }
 

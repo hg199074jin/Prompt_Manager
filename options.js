@@ -118,7 +118,7 @@ async function renderCategories() {
   allItem.addEventListener('click', () => selectCategory('all'));
   listContainer.appendChild(allItem);
 
-  categories.forEach(cat => {
+  categories.forEach((cat, i) => {
     const item = document.createElement('div');
     item.className = 'category-item' + (currentCategory === cat.id ? ' active' : '');
     item.dataset.category = cat.id;
@@ -148,6 +148,38 @@ async function renderCategories() {
       deleteCategoryById(cat.id, cat.name, counts[cat.id] || 0);
     });
     item.appendChild(deleteBtn);
+
+    // Up button
+    const upBtn = document.createElement('button');
+    upBtn.className = 'btn btn-small btn-secondary';
+    upBtn.textContent = '↑';
+    upBtn.style.marginLeft = '2px';
+    upBtn.disabled = i === 0;
+    upBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (i > 0) {
+        await swapCategoryOrder(categories[i].id, categories[i - 1].id);
+        await renderCategories();
+        await renderPrompts();
+      }
+    });
+    item.appendChild(upBtn);
+
+    // Down button
+    const downBtn = document.createElement('button');
+    downBtn.className = 'btn btn-small btn-secondary';
+    downBtn.textContent = '↓';
+    downBtn.style.marginLeft = '2px';
+    downBtn.disabled = i === categories.length - 1;
+    downBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (i < categories.length - 1) {
+        await swapCategoryOrder(categories[i].id, categories[i + 1].id);
+        await renderCategories();
+        await renderPrompts();
+      }
+    });
+    item.appendChild(downBtn);
 
     listContainer.appendChild(item);
   });
