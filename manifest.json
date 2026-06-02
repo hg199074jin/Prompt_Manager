@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Prompt Manager",
+  "version": "1.5.1",
+  "description": "AI 提示词管理器，快速复制、编辑、优化提示词",
+  "default_locale": "zh",
+  "permissions": ["storage", "clipboardWrite", "alarms", "contextMenus", "scripting", "activeTab"],
+  "host_permissions": ["https://api.github.com/*"],
+  "optional_host_permissions": ["https://*/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options.html",
+  "commands": {
+    "save-selection": {
+      "suggested_key": { "default": "Ctrl+Shift+S", "mac": "MacCtrl+Shift+S" },
+      "description": "保存选中文字为提示词"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline';"
+  }
+}

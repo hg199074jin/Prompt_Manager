@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prompt Manager - 设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <h1>⚡ Prompt Manager</h1>
+      <span class="header-subtitle">- 提示词管理</span>
+    </div>
+    <div class="header-right">
+      <button id="lang-btn" class="lang-btn">🇨🇳 中文</button>
+      <button id="analytics-btn" class="btn btn-header">📊 使用分析</button>
+      <button id="api-settings-btn" class="btn btn-header">⚙️ API 配置</button>
+      <button id="sync-settings-btn" class="btn btn-header">☁️ 同步设置</button>
+      <span id="sync-status-indicator" class="sync-status-indicator not-configured" title="同步状态"></span>
+      <button id="import-btn" class="btn btn-header">📥 导入</button>
+      <button id="export-btn" class="btn btn-header">📤 导出全部</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- Sidebar: Category Management -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>分类管理</h2>
+        <button id="add-category-btn" class="btn btn-small btn-primary">+ 添加</button>
+      </div>
+      <div class="category-list" id="category-list">
+        <div class="category-item active" data-category="all">
+          <span class="category-emoji">📋</span>
+          <span class="category-name">全部</span>
+          <span class="category-count" id="all-count">0</span>
+        </div>
+      </div>
+      <div class="sidebar-resizer" id="sidebar-resizer"></div>
+    </aside>
+
+    <!-- Content: Prompt List -->
+    <main class="content">
+      <div class="content-header">
+        <div class="content-actions">
+          <input type="text" id="search-input" class="search-input" placeholder="搜索提示词...">
+          <select id="sort-select" class="sort-select">
+            <option value="updatedAt">按更新时间排序</option>
+            <option value="createdAt">按创建时间排序</option>
+            <option value="usageCount">按使用次数排序</option>
+            <option value="rating">按评分排序</option>
+            <option value="title">按名称排序</option>
+          </select>
+        </div>
+        <div class="content-buttons">
+          <button id="select-all-btn" class="btn btn-secondary" style="display: none;">☑️ 全选</button>
+          <button id="delete-selected-btn" class="btn btn-danger" style="display: none;">🗑️ 删除选中</button>
+          <button id="add-prompt-btn" class="btn btn-primary">+ 新建提示词</button>
+        </div>
+      </div>
+
+      <div class="prompt-list" id="prompt-list">
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal: Add/Edit Prompt -->
+  <div id="prompt-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-title">新建提示词</h2>
+        <button class="modal-close" id="modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>标题</label>
+          <input type="text" id="prompt-title" placeholder="输入提示词标题">
+        </div>
+        <div class="form-group">
+          <label>内容</label>
+          <textarea id="prompt-content" rows="6" placeholder="输入提示词内容"></textarea>
+        </div>
+        <div class="form-group">
+          <label>分类</label>
+          <select id="prompt-category">
+          </select>
+        </div>
+        <div class="form-group">
+          <label>评分</label>
+          <select id="prompt-rating">
+            <option value="0">未评分</option>
+            <option value="1">★</option>
+            <option value="2">★★</option>
+            <option value="3">★★★</option>
+            <option value="4">★★★★</option>
+            <option value="5">★★★★★</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>标签</label>
+          <div class="tags-input-container" id="tags-input-container">
+            <div class="tags-list" id="tags-list"></div>
+            <input type="text" id="tags-input" placeholder="输入标签后按 Enter 添加">
+          </div>
+          <div class="tags-suggestions" id="tags-suggestions" style="display: none;"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-cancel">取消</button>
+        <button class="btn btn-primary" id="modal-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add/Edit Category -->
+  <div id="category-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="category-modal-title">新建分类</h2>
+        <button class="modal-close" id="category-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>分类名称</label>
+          <input type="text" id="category-name" placeholder="输入分类名称">
+        </div>
+        <div class="form-group">
+          <label>英文名称</label>
+          <input type="text" id="category-name-en" placeholder="Enter category name">
+        </div>
+        <div class="form-group">
+          <label>表情符号</label>
+          <div class="emoji-picker" id="emoji-picker">
+            <div class="emoji-selected" id="emoji-selected">📝</div>
+            <button class="btn btn-small btn-secondary" id="emoji-change-btn">更换</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="category-modal-cancel">取消</button>
+        <button class="btn btn-primary" id="category-modal-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Emoji Picker -->
+  <div id="emoji-modal" class="modal" style="display: none;">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2>选择表情符号</h2>
+        <button class="modal-close" id="emoji-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="emoji-search" class="search-input" placeholder="搜索表情...">
+        <div class="emoji-grid" id="emoji-grid">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: AI Polish -->
+  <div id="ai-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>✨ AI 润色提示词</h2>
+        <button class="modal-close" id="ai-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>原始提示词</label>
+          <div class="ai-original" id="ai-original"></div>
+        </div>
+        <div class="form-group">
+          <label>优化模式</label>
+          <select id="ai-mode">
+            <option value="quick">快速润色</option>
+            <option value="structured">专业结构化</option>
+            <option value="variables">变量模板化</option>
+            <option value="format">严格输出格式</option>
+            <option value="diagnose">诊断问题</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>优化方向（可多选）</label>
+          <div class="ai-options">
+            <label class="ai-option-card">
+              <input type="checkbox" id="ai-role" checked>
+              <div class="ai-option-info">
+                <span class="ai-option-title">添加角色设定</span>
+                <span class="ai-option-example">例："帮我写一篇文案" → "你是一位资深小红书博主，请帮我写一篇种草文案"</span>
+              </div>
+            </label>
+            <label class="ai-option-card">
+              <input type="checkbox" id="ai-output" checked>
+              <div class="ai-option-info">
+                <span class="ai-option-title">细化输出要求</span>
+                <span class="ai-option-example">例：添加"字数500字以内，分3个段落，使用口语化表达"</span>
+              </div>
+            </label>
+            <label class="ai-option-card">
+              <input type="checkbox" id="ai-example">
+              <div class="ai-option-info">
+                <span class="ai-option-title">添加示例参考</span>
+                <span class="ai-option-example">例：附上1-2个期望输出的样例，让AI更准确理解你的需求</span>
+              </div>
+            </label>
+            <label class="ai-option-card">
+              <input type="checkbox" id="ai-constraint">
+              <div class="ai-option-info">
+                <span class="ai-option-title">增加约束条件</span>
+                <span class="ai-option-example">例："不要使用专业术语"、"必须包含数据支撑"、"语气轻松活泼"</span>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div id="ai-loading" class="ai-loading" style="display: none;">
+          <span class="ai-spinner"></span>
+          <span>AI 正在分析，复杂提示词可能需要 1-2 分钟...</span>
+        </div>
+        <div id="ai-stream-container" style="display: none;">
+          <label>AI 生成中：</label>
+          <pre id="ai-stream-content" class="ai-stream-content"></pre>
+        </div>
+        <div id="ai-error" class="ai-error-panel" style="display: none;"></div>
+        <div id="ai-result-group" style="display: none;">
+          <div class="ai-result-section">
+            <h3>诊断</h3>
+            <div id="ai-diagnosis"></div>
+          </div>
+          <div class="ai-result-section">
+            <h3>优化结果</h3>
+            <pre id="ai-improved-prompt" class="ai-result-pre"></pre>
+          </div>
+          <div class="ai-result-section">
+            <h3>变量建议</h3>
+            <div id="ai-variable-suggestions"></div>
+          </div>
+          <div class="ai-result-section">
+            <h3>输出格式</h3>
+            <div id="ai-output-format"></div>
+          </div>
+          <div class="ai-result-section">
+            <h3>风险提示</h3>
+            <div id="ai-risk-notes"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="ai-modal-cancel">取消</button>
+        <button class="btn btn-secondary" id="ai-regenerate" style="display: none;">重新生成</button>
+        <button class="btn btn-secondary" id="ai-copy" disabled>复制结果</button>
+        <button class="btn btn-secondary" id="ai-save-new" disabled>另存为新提示词</button>
+        <button class="btn btn-primary" id="ai-generate">开始润色</button>
+        <button class="btn btn-primary" id="ai-use" disabled style="display: none;">使用优化结果</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: API Config -->
+  <div id="api-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>⚙️ API 配置管理</h2>
+        <button class="modal-close" id="api-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>当前使用的配置</label>
+          <div class="api-configs" id="api-configs">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>配置名称</label>
+          <input type="text" id="api-name" placeholder="OpenAI GPT-4">
+        </div>
+        <div class="form-group">
+          <label>API 地址</label>
+          <input type="text" id="api-url" placeholder="https://api.openai.com/v1">
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <div class="api-key-input">
+            <input type="password" id="api-key" placeholder="sk-...">
+            <button class="btn btn-small btn-secondary" id="api-key-toggle">👁️</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>模型名称</label>
+          <input type="text" id="api-model" placeholder="gpt-4">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="api-delete">删除此配置</button>
+        <button class="btn btn-secondary" id="api-test">测试连接</button>
+        <button class="btn btn-primary" id="api-save">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Modal: Usage Analytics -->
+  <div id="analytics-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>📊 使用分析</h2>
+        <button class="modal-close" id="analytics-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="analytics-summary" class="analytics-summary"></div>
+        <div id="analytics-list" class="analytics-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Version History -->
+  <div id="version-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>🕘 版本历史</h2>
+        <button class="modal-close" id="version-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="version-list" class="version-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: WebDAV Sync Config -->
+  <div id="webdav-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>☁️ WebDAV 同步设置</h2>
+        <button class="modal-close" id="webdav-modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="webdav-enabled"> 启用同步
+          </label>
+        </div>
+        <div class="form-group">
+          <label>服务器地址</label>
+          <input type="text" id="webdav-server" placeholder="https://dav.jianguoyun.com/dav">
+        </div>
+        <div class="form-group">
+          <label>用户名</label>
+          <input type="text" id="webdav-username" placeholder="your@email.com">
+        </div>
+        <div class="form-group">
+          <label>应用密码（非登录密码）</label>
+          <div class="api-key-input">
+            <input type="password" id="webdav-password" placeholder="坚果云安全选项中生成的应用密码">
+            <button class="btn btn-small btn-secondary" id="webdav-password-toggle">👁️</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>远程文件路径</label>
+          <input type="text" id="webdav-path" placeholder="/prompt-manager-sync.json">
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="webdav-auto-sync" checked> 数据变更时自动同步
+          </label>
+        </div>
+        <div class="form-group">
+          <label>定时拉取间隔（分钟）</label>
+          <input type="number" id="webdav-interval" min="5" max="1440" value="120">
+        </div>
+        <div class="sync-tip">
+          💡 坚果云同步步骤：1) 在坚果云客户端（Win/Mac）新建一个同步文件夹（如 Prompt_Extension）；2) 在坚果云网页端"安全选项"中生成应用密码；3) 服务器地址填 <code>https://dav.jianguoyun.com/dav</code>（不含用户名）；4) 远程文件路径填 <code>/你的文件夹名/prompt-manager-sync.json</code>（如 <code>/Prompt_Extension/prompt-manager-sync.json</code>）。免费账户每月 1GB 上传流量，提示词文件极小，完全够用。
+        </div>
+        <div class="sync-status-panel" id="sync-status-panel">
+          <div class="sync-status-row">
+            <span class="sync-status-label">上次同步:</span>
+            <span id="sync-last-time">从未</span>
+          </div>
+          <div class="sync-status-row">
+            <span class="sync-status-label">状态:</span>
+            <span id="sync-status-text">空闲</span>
+          </div>
+          <div class="sync-status-row" id="sync-error-row" style="display: none;">
+            <span class="sync-status-label">错误:</span>
+            <span id="sync-error-text" class="sync-error"></span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="webdav-delete">清除配置</button>
+        <button class="btn btn-secondary" id="webdav-test">测试连接</button>
+        <button class="btn btn-secondary" id="webdav-sync-now">立即同步</button>
+        <button class="btn btn-primary" id="webdav-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="pro-utils.js"></script>
+  <script src="ai-polish-utils.js"></script>
+  <script src="storage.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
